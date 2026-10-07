@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SnapJM - AR Beauty Studio & Virtual Cam</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Load MediaPipe Vision Bundle locally -->
+  <script src="../public/vision_bundle.js"></script>
+  <!-- Load Snap Camera Kit Bundle -->
+  <script src="../public/camera-kit-bundle.js"></script>
+</head>
+<body>
+  <div class="app-container">
+    <!-- TOP TITLEBAR -->
+    <header class="titlebar">
+      <div class="titlebar-left">
+        <div class="app-logo">
+          <svg viewBox="0 0 24 24" class="logo-icon" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+            <path d="M12 9v1m0 6v1m-3-4h1m6 0h1" stroke-linecap="round" opacity="0.8"/>
+          </svg>
+          <div class="logo-text">
+            <span class="logo-name">SnapJM</span>
+            <span class="logo-badge">STUDIO AR</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="titlebar-center">
+        <div class="status-pill" id="badge-face">
+          <span class="dot-indicator green"></span>
+          <span class="status-label" id="face-status-text">Detectando rostro...</span>
+        </div>
+        <div class="status-pill" id="badge-res">
+          <span class="status-label" id="res-status-text">Cámara: Iniciando...</span>
+        </div>
+        <div class="status-pill" id="badge-ai-calib" title="Calibración Automática con IA: Balance de Blancos, Exposición e ISO">
+          <span class="dot-indicator green"></span>
+          <span class="status-label" id="ai-calib-status-text">AI: 5400K • Exp Auto</span>
+        </div>
+        <div class="status-pill" id="badge-fps">
+          <span class="fps-value" id="fps-counter">60</span>
+          <span class="fps-unit">FPS</span>
+        </div>
+        <div class="status-pill" id="badge-obs">
+          <span class="dot-indicator blue" id="obs-dot"></span>
+          <span class="status-label" id="obs-status-text">OBS Virtual: Inactivo</span>
+        </div>
+      </div>
+
+      <div class="titlebar-right">
+        <button class="window-btn" id="btn-minimize" title="Minimizar">
+          <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+        <button class="window-btn" id="btn-maximize" title="Maximizar">
+          <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+            <rect x="5" y="5" width="14" height="14" rx="2"></rect>
+          </svg>
+        </button>
+        <button class="window-btn close-btn" id="btn-close" title="Cerrar">
+          <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2" fill="none">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- MAIN WORKSPACE -->
+    <main class="main-content">
+      <!-- VIEWPORT (VIDEO CANVAS) -->
+      <section class="viewport-section">
+        <div class="viewport-wrapper" id="viewport-wrapper">
+          <!-- Hidden source video -->
+          <video id="webcam-video" autoplay playsinline muted></video>
+
+          <!-- Main WebGL output canvas -->
+          <canvas id="gl-canvas"></canvas>
+
+          <!-- Split-Screen Draggable Slider Handle -->
+          <div class="split-slider-container" id="split-slider-container" style="display: none;">
+            <div class="split-line" id="split-line">
+              <div class="split-handle">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="15 18 9 12 15 6"></polyline>
+                  <polyline points="9 18 3 12 9 6"></polyline>
+                </svg>
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="9 18 15 12 9 6"></polyline>
+                  <polyline points="15 18 21 12 15 6"></polyline>
+                </svg>
+              </div>
+            </div>
+            <div class="split-label left">AR BEAUTY</div>
+            <div class="split-label right">ORIGINAL</div>
+          </div>
+
+          <!-- Camera Loading / Error Overlay -->
+          <div class="camera-loader" id="camera-loader">
+            <div class="spinner"></div>
+            <p id="camera-loader-text">Iniciando cámara y aceleración GPU...</p>
+          </div>
+
+          <!-- Quick Floating Action Bar -->
+          <div class="floating-toolbar">
+            <button class="tool-btn" id="btn-compare" title="Comparar Antes / Después (Pantalla dividida)">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+                <line x1="12" y1="3" x2="12" y2="21"></line>
+              </svg>
+              <span>Comparar</span>
+            </button>
+
+            <button class="tool-btn" id="btn-mirror" title="Modo Espejo (Invertir horizontal)">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="16 3 21 3 21 8"></polyline>
+                <line x1="4" y1="20" x2="21" y2="3"></line>
+                <polyline points="21 16 21 21 16 21"></polyline>
+                <line x1="15" y1="15" x2="21" y2="21"></line>
+                <line x1="4" y1="4" x2="9" y2="9"></line>
+              </svg>
+              <span>Espejo</span>
+            </button>
+
+            <button class="tool-btn active-gold" id="btn-auto-enhance" title="Corrección Automática Inteligente (Elimina ruido y optimiza rostro)">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2l2.4 7.2L21.6 12l-7.2 2.4L12 21.6l-2.4-7.2L2.4 12l7.2-2.4L12 2z"></path>
+              </svg>
+              <span>✨ Auto-Mejora</span>
+            </button>
+
+            <button class="tool-btn" id="btn-bypass" title="Bypass temporal de filtros">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+              <span>Filtros ON</span>
+            </button>
+
+            <div class="toolbar-divider"></div>
+
+            <button class="tool-btn action-btn" id="btn-snapshot" title="Tomar captura HD">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                <circle cx="12" cy="13" r="4"></circle>
+              </svg>
+              <span>Foto HD</span>
+            </button>
+
+            <button class="tool-btn rec-btn" id="btn-record" title="Grabar clip de video">
+              <span class="rec-dot"></span>
+              <span id="rec-label">Grabar</span>
+            </button>
+
+            <button class="tool-btn" id="btn-fullscreen" title="Pantalla completa">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Notification Toast -->
+          <div class="toast-message" id="toast-message"></div>
+        </div>
+      </section>
+
+      <!-- SIDEBAR CONTROLS (STREAMFOG STYLE) -->
+      <aside class="sidebar-section">
+        <!-- Navigation Tabs -->
+        <nav class="sidebar-tabs">
+          <button class="tab-btn active" data-tab="tab-beauty">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+            </svg>
+            <span>Belleza AR</span>
+          </button>
+          <button class="tab-btn" data-tab="tab-color">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <path d="M12 2a10 10 0 0 1 10 10H12V2z"></path>
+            </svg>
+            <span>Estudio</span>
+          </button>
+          <button class="tab-btn" data-tab="tab-obs">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="3" width="20" height="14" rx="2"></rect>
+              <line x1="8" y1="21" x2="16" y2="21"></line>
+              <line x1="12" y1="17" x2="12" y2="21"></line>
+            </svg>
+            <span>OBS & Cam</span>
+          </button>
+          <button class="tab-btn" data-tab="tab-snap">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15h2v2h-2v-2zm1-14c2.21 0 4 1.79 4 4 0 1.5-.8 2.77-2 3.46v1.54h-2v-2h1c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2H8c0-2.21 1.79-4 4-4z"></path>
+            </svg>
+            <span>Snap Kit</span>
+          </button>
+          <button class="tab-btn" data-tab="tab-settings">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"></circle>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+            </svg>
+            <span>Ajustes</span>
+          </button>
+        </nav>
+
+        <!-- TAB CONTENT CONTAINER -->
+        <div class="sidebar-body">
+          
+          <!-- TAB 1: BELLEZA AR (SUAVIZADO + DIENTES BLANCOS) -->
+          <div class="tab-pane active" id="tab-beauty">
+            <div class="panel-header">
+              <h3>Filtros de Belleza AR</h3>
+              <p>Misma tecnología Snap Camera & Bilateral Smoothing en tiempo real</p>
+            </div>
+
+            <!-- Quick Presets -->
+            <div class="preset-section">
+              <span class="section-label">PRESETS RÁPIDOS</span>
+              <div class="preset-grid">
+                <button class="preset-pill active" data-preset="auto">✨ Auto Óptimo</button>
+                <button class="preset-pill" data-preset="natural">Natural</button>
+                <button class="preset-pill" data-preset="porcelain">Porcelana</button>
+                <button class="preset-pill" data-preset="streamer">Streamer Pro</button>
+                <button class="preset-pill" data-preset="glam">Ultra Glam</button>
+                <button class="preset-pill" data-preset="reset">Reset</button>
+              </div>
+            </div>
+
+            <!-- Control Card: Suavizado de Piel -->
+            <div class="control-card">
+              <div class="card-title">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
+                </svg>
+                <span>Suavizado de Piel (Skin Smoothing)</span>
+              </div>
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="sl-smooth">Intensidad de Suavizado (Anti-Acné & Piel)</label>
+                  <span class="slider-val" id="val-smooth">50%</span>
+                </div>
+                <input type="range" id="sl-smooth" min="0" max="100" value="50">
+              </div>
+
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="sl-radius">Radio del Filtro Bilateral</label>
+                  <span class="slider-val" id="val-radius">3.5</span>
+                </div>
+                <input type="range" id="sl-radius" min="10" max="80" value="35">
+              </div>
+
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="sl-edge">Preservación de Bordes & Textura</label>
+                  <span class="slider-val" id="val-edge">14%</span>
+                </div>
+                <input type="range" id="sl-edge" min="4" max="40" value="14">
+              </div>
+            </div>
+
+            <!-- Control Card: Uniformidad de Tono & Anti-Rojeces -->
+            <div class="control-card accent-purple">
+              <div class="card-title">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z"></path>
+                  <line x1="16" y1="8" x2="2" y2="22"></line>
+                  <line x1="17.5" y1="15" x2="9" y2="15"></line>
+                </svg>
+                <span>Filtro de Uniformidad & Anti-Rojeces</span>
+              </div>
+
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="sl-uniformity">Uniformidad de Tono (Empareja Manchas)</label>
+                  <span class="slider-val" id="val-uniformity">50%</span>
+                </div>
+                <input type="range" id="sl-uniformity" min="0" max="100" value="50">
+              </div>
+
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="sl-anti-redness">Corrección de Rojeces (Anti-Acné / Manchas)</label>
+                  <span class="slider-val" id="val-anti-redness">60%</span>
+                </div>
+                <input type="range" id="sl-anti-redness" min="0" max="100" value="60">
+              </div>
+
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="sl-sharpen">Nitidez HD (Micro-Textura Natural)</label>
+                  <span class="slider-val" id="val-sharpen">25%</span>
+                </div>
+                <input type="range" id="sl-sharpen" min="0" max="100" value="25">
+              </div>
+
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="sl-tone-tint">Matiz Base del Cutis</label>
+                  <span class="slider-val" id="val-tone-tint">Natural Luminoso</span>
+                </div>
+                <input type="range" id="sl-tone-tint" min="0" max="100" value="50">
+              </div>
+            </div>
+
+            <!-- Control Card: Bolsas de Ojos & Ojeras -->
+            <div class="control-card accent-purple">
+              <div class="card-title">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                  <circle cx="12" cy="12" r="3"></circle>
+                </svg>
+                <span>Bolsas de Ojos & Ojeras (Anti-Fatiga)</span>
+              </div>
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="sl-eye-bags">Eliminación de Bolsas & Ojeras</label>
+                  <span class="slider-val" id="val-eye-bags">50%</span>
+                </div>
+                <input type="range" id="sl-eye-bags" min="0" max="100" value="50">
+              </div>
+            </div>
+
+            <!-- Control Card: Dientes Blancos -->
+            <div class="control-card accent-cyan">
+              <div class="card-title">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2C8 2 4 5 4 9c0 5 4 13 8 13s8-8 8-13c0-4-4-7-8-7z"></path>
+                </svg>
+                <span>Dientes Blancos (Teeth Whitening)</span>
+              </div>
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="sl-teeth">Blanqueamiento Dental</label>
+                  <span class="slider-val" id="val-teeth">35%</span>
+                </div>
+                <input type="range" id="sl-teeth" min="0" max="100" value="35">
+              </div>
+
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="sl-teeth-bright">Brillo de Esmalte Dental</label>
+                  <span class="slider-val" id="val-teeth-bright">6%</span>
+                </div>
+                <input type="range" id="sl-teeth-bright" min="0" max="50" value="6">
+              </div>
+            </div>
+
+            <!-- Control Card: Ojos Radiantes -->
+            <div class="control-card">
+              <div class="card-title">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <circle cx="12" cy="12" r="4"></circle>
+                </svg>
+                <span>Ojos Radiantes (Eye Brighten)</span>
+              </div>
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="sl-eyes">Brillo & Claridad de Ojos</label>
+                  <span class="slider-val" id="val-eyes">25%</span>
+                </div>
+                <input type="range" id="sl-eyes" min="0" max="100" value="25">
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 2: ESTUDIO & CALIBRACIÓN IA DE CÁMARA -->
+          <div class="tab-pane" id="tab-color">
+            <div class="panel-header">
+              <h3>Captura Básica & Calibración con IA</h3>
+              <p>Optimización automática de cámara (ISO, exposición, AWB y anti-ruido) antes de aplicar filtros</p>
+            </div>
+
+            <!-- Card: Arquitectura del Pipeline de Captura -->
+            <div class="pipeline-card">
+              <div class="card-title">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2l2.4 7.2L21.6 12l-7.2 2.4L12 21.6l-2.4-7.2L2.4 12l7.2-2.4L12 2z"></path>
+                </svg>
+                <span>Pipeline de Calibración Automática</span>
+              </div>
+              <div class="pipeline-steps">
+                <div class="pipeline-step-item">
+                  <span class="step-num">PASO 1</span>
+                  <div class="step-content">
+                    <span class="step-title">Calibración Óptica de Cámara (IA)</span>
+                    <span class="step-desc">Cálculo de ISO, Balance de Blancos Von Kries y Exposición facial. Reactivo a cada cambio de luz.</span>
+                  </div>
+                </div>
+                <div class="pipeline-step-item step-2">
+                  <span class="step-num">PASO 2</span>
+                  <div class="step-content">
+                    <span class="step-title">Filtro Anti-Ruido Automático (IA)</span>
+                    <span class="step-desc">Supresión adaptativa de grano temporal y ruido cromático en la señal del sensor. Activo por defecto.</span>
+                  </div>
+                </div>
+                <div class="pipeline-step-item step-3">
+                  <span class="step-num">PASO 3</span>
+                  <div class="step-content">
+                    <span class="step-title">Filtros de Belleza y Textura Natural</span>
+                    <span class="step-desc">Separación de frecuencias que conserva el micro-poro y elimina al 100% el aspecto parafina/cera.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Card: Telemetría de Captura en Tiempo Real -->
+            <div class="control-card accent-cyan">
+              <div class="card-title">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                </svg>
+                <span>Telemetría de Captura Básica</span>
+              </div>
+
+              <div class="telemetry-grid">
+                <div class="telemetry-row">
+                  <span class="telemetry-label">🌡️ Balance de Blancos (AWB):</span>
+                  <span class="telemetry-badge" id="telemetry-kelvin">5400 K • Óptimo</span>
+                </div>
+                <div class="telemetry-row">
+                  <span class="telemetry-label">☀️ Exposición & ISO Facial:</span>
+                  <span class="telemetry-badge" id="telemetry-exposure">+0.0 EV • Normalizado</span>
+                </div>
+                <div class="telemetry-row">
+                  <span class="telemetry-label">🛡️ Anti-Ruido de Sensor:</span>
+                  <span class="telemetry-badge" id="telemetry-denoise">Auto (65%) • Activo</span>
+                </div>
+                <div class="telemetry-row">
+                  <span class="telemetry-label">💡 Detección de Iluminación:</span>
+                  <span class="telemetry-badge green" id="telemetry-lighting">Continuo • En tiempo real</span>
+                </div>
+              </div>
+
+              <button class="primary-btn full-width" id="btn-recalibrate-lighting">
+                ✨ Recalibrar Iluminación con IA Ahora
+              </button>
+
+              <div class="ai-banner-note">
+                El balance de blancos, exposición facial y anti-ruido se calculan automáticamente en GPU a 60 FPS ante cualquier cambio de iluminación.
+              </div>
+            </div>
+
+            <!-- Card: Ajustes Creativos Opcionales de Estudio -->
+            <div class="control-card">
+              <div class="card-title">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M12 2a10 10 0 0 1 10 10H12V2z"></path>
+                </svg>
+                <span>Ajustes Creativos de Estudio (Opcional)</span>
+              </div>
+
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="sl-contrast">Contraste de Estudio</label>
+                  <span class="slider-val" id="val-contrast">1.02</span>
+                </div>
+                <input type="range" id="sl-contrast" min="70" max="150" value="102">
+              </div>
+
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="sl-saturation">Saturación de Color</label>
+                  <span class="slider-val" id="val-saturation">1.02</span>
+                </div>
+                <input type="range" id="sl-saturation" min="50" max="160" value="102">
+              </div>
+
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="sl-brightness">Compensación Manual de Brillo</label>
+                  <span class="slider-val" id="val-brightness">0%</span>
+                </div>
+                <input type="range" id="sl-brightness" min="-30" max="30" value="0">
+              </div>
+
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="sl-temp">Tinte Cálido / Frío Manual</label>
+                  <span class="slider-val" id="val-temp">0</span>
+                </div>
+                <input type="range" id="sl-temp" min="-20" max="20" value="0">
+              </div>
+
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="sl-glow">Resplandor Suave (Soft Glow)</label>
+                  <span class="slider-val" id="val-glow">0%</span>
+                </div>
+                <input type="range" id="sl-glow" min="0" max="60" value="0">
+              </div>
+
+              <div class="slider-group">
+                <div class="slider-header">
+                  <label for="sl-vignette">Viñeta Cinematográfica</label>
+                  <span class="slider-val" id="val-vignette">0%</span>
+                </div>
+                <input type="range" id="sl-vignette" min="0" max="80" value="0">
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 3: OBS & VIRTUAL CAMERA -->
+          <div class="tab-pane" id="tab-obs">
+            <div class="panel-header">
+              <h3>Cámara Virtual Nativa & Streaming</h3>
+              <p>Envía tu cámara procesada directamente a Zoom, Meet, Teams, Discord o OBS</p>
+            </div>
+
+            <!-- Card 1: Cámara Virtual Nativa DirectShow para Windows -->
+            <div class="control-card vcam-card">
+              <div class="vcam-header-row">
+                <div class="card-title">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M23 7l-7 5 7 5V7z"></path>
+                    <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+                  </svg>
+                  <span>SnapJM Virtual Camera (Windows)</span>
+                </div>
+                <div class="vcam-badge not-installed" id="vcam-driver-badge">
+                  <span class="dot-indicator yellow"></span>
+                  <span id="vcam-driver-text">Verificando...</span>
+                </div>
+              </div>
+
+              <!-- Driver Install / Uninstall Action -->
+              <div id="vcam-install-container" style="display: none;">
+                <button class="secondary-btn full-width" id="btn-install-vcam" style="border-color: rgba(255, 152, 0, 0.4); color: #ffb74d;">
+                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                  <span>Instalar Controlador DirectShow de Windows (1 Clic)</span>
+                </button>
+              </div>
+
+              <!-- Master Toggle Button -->
+              <button class="vcam-toggle-btn start" id="btn-toggle-vcam">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+                <span id="vcam-toggle-label">Iniciar Cámara Virtual de Windows</span>
+              </button>
+
+              <!-- Live DirectShow Telemetry -->
+              <div class="telemetry-grid">
+                <div class="telemetry-row">
+                  <span class="telemetry-label">🎥 Dispositivo del Sistema:</span>
+                  <span class="telemetry-badge" id="vcam-device-name">SnapJM Virtual Camera</span>
+                </div>
+                <div class="telemetry-row">
+                  <span class="telemetry-label">⚡ Tasa y Latencia:</span>
+                  <span class="telemetry-badge green" id="vcam-telemetry-stats">60 FPS • &lt; 2ms (Memoria Compartida)</span>
+                </div>
+                <div class="telemetry-row">
+                  <span class="telemetry-label">📺 Estado del Driver:</span>
+                  <span class="telemetry-badge" id="vcam-stream-status">Inactiva</span>
+                </div>
+              </div>
+
+              <div class="instructions-card">
+                <h4>Cómo usar en Zoom, Google Meet, Teams y Discord:</h4>
+                <ol>
+                  <li>Haz clic en <strong>"Iniciar Cámara Virtual de Windows"</strong> arriba.</li>
+                  <li>Abre <strong>Zoom</strong>, <strong>Google Meet</strong>, <strong>Teams</strong> o <strong>Discord</strong>.</li>
+                  <li>En la lista de cámaras de la aplicación, elige <strong>"SnapJM Virtual Camera"</strong>.</li>
+                  <li>¡Listo! Tu video en vivo se verá automáticamente con el suavizado, corrección facial y 60 FPS sin necesidad de tener OBS abierto.</li>
+                </ol>
+              </div>
+            </div>
+
+            <!-- Card 2: Servidor HTTP para OBS Browser Source (Opcional) -->
+            <div class="control-card server-card">
+              <div class="server-status-row">
+                <div class="status-info">
+                  <span class="server-title">Servidor OBS Browser Source (Alternativa)</span>
+                  <span class="server-desc" id="server-desc-status">Iniciando servidor local...</span>
+                </div>
+                <button class="primary-btn" id="btn-toggle-server">Activar Servidor</button>
+              </div>
+
+              <div class="url-copy-box">
+                <label>URL para OBS Browser Source:</label>
+                <div class="copy-input-row">
+                  <input type="text" id="obs-browser-url" readonly value="http://localhost:8554">
+                  <button class="copy-btn" id="btn-copy-obs">Copiar</button>
+                </div>
+              </div>
+
+              <div class="url-copy-box">
+                <label>URL de Stream MJPEG (Para VLC / Media Source):</label>
+                <div class="copy-input-row">
+                  <input type="text" id="obs-mjpeg-url" readonly value="http://localhost:8554/stream.mjpeg">
+                  <button class="copy-btn" id="btn-copy-mjpeg">Copiar</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 4: SNAP CAMERA KIT -->
+          <div class="tab-pane" id="tab-snap">
+            <div class="panel-header">
+              <h3>Snap Camera Kit (Oficial Snap Inc.)</h3>
+              <p>Carga lentes oficiales de Snapchat creados en Lens Studio</p>
+            </div>
+
+            <div class="control-card">
+              <div class="form-group">
+                <label for="snap-token">API Token de Snap Camera Kit:</label>
+                <input type="password" id="snap-token" placeholder="Pega tu API Token de desarrollador Snap">
+              </div>
+
+              <div class="form-group">
+                <label for="snap-group-id">Lens Group ID (Opcional):</label>
+                <input type="text" id="snap-group-id" placeholder="Ej. 12345678-abcd-1234-abcd-123456789abc">
+              </div>
+
+              <button class="primary-btn full-width" id="btn-connect-snap">Conectar Snap Camera Kit</button>
+              <div class="snap-status-text" id="snap-status-text">Listo para conectar con Snap Inc.</div>
+
+              <div class="snap-lenses-container" id="snap-lenses-container" style="display: none;">
+                <span class="section-label">LENTES DE SNAPCHAT DISPONIBLES</span>
+                <div class="lenses-grid" id="lenses-grid"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- TAB 5: AJUSTES & DISPOSITIVOS -->
+          <div class="tab-pane" id="tab-settings">
+            <div class="panel-header">
+              <h3>Configuración de Dispositivos</h3>
+              <p>Ajustes de cámara web, resolución y carpetas</p>
+            </div>
+
+            <div class="control-card">
+              <div class="form-group">
+                <label for="select-camera">Cámara Web:</label>
+                <select id="select-camera" class="custom-select"></select>
+              </div>
+
+              <div class="form-group">
+                <div class="slider-header">
+                  <label for="select-resolution">Resolución Disponible:</label>
+                  <span class="slider-val" id="res-badge" style="font-size: 10px; font-weight: normal; color: var(--text-dim);">Detectando hardware...</span>
+                </div>
+                <select id="select-resolution" class="custom-select">
+                  <option value="">Detectando resoluciones de cámara...</option>
+                </select>
+              </div>
+
+              <div class="form-group">
+                <label for="select-fps">Tasa de Cuadros (FPS):</label>
+                <select id="select-fps" class="custom-select">
+                  <option value="60" selected>60 FPS (Máxima Fluidez)</option>
+                  <option value="30">30 FPS (Modo Ahorro de Recursos)</option>
+                </select>
+              </div>
+
+              <button class="secondary-btn full-width" id="btn-open-captures">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                </svg>
+                <span>Abrir Carpeta de Capturas y Grabaciones</span>
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <!-- Compiled Modern TypeScript Architecture (SOLID, Decoupled 60 FPS) -->
+  <script src="../public/app.bundle.js"></script>
+</body>
+</html>

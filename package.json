@@ -1,0 +1,97 @@
+{
+  "name": "snapjm",
+  "version": "1.0.0",
+  "description": "SnapJM - AR Beauty Camera & Virtual Webcam for Windows (DirectShow & OBS)",
+  "main": "main.js",
+  "scripts": {
+    "build:ts": "esbuild src/index.ts --bundle --outfile=public/app.bundle.js --format=iife --sourcemap",
+    "build": "npm run build:ts",
+    "prestart": "npm run build:ts",
+    "start": "electron .",
+    "dev": "npm run build:ts && electron .",
+    "build:bundle": "esbuild src/ar/camera-kit-entry.js --bundle --outfile=public/camera-kit-bundle.js --format=iife --global-name=SnapCameraKitModule",
+    "dist": "npm run build:ts && electron-builder --win",
+    "dist:portable": "npm run build:ts && electron-builder --win portable",
+    "dist:installer": "npm run build:ts && electron-builder --win nsis"
+  },
+  "build": {
+    "appId": "com.snapjm.studio",
+    "productName": "SnapJM",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "public/**/*",
+      "assets/**/*",
+      "!assets/driver/**",
+      "!**/*.ts",
+      "!tsconfig.json"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/driver",
+        "to": "driver"
+      }
+    ],
+    "asarUnpack": [
+      "**/node_modules/koffi/**/*"
+    ],
+    "win": {
+      "icon": "public/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SnapJM AR Studio",
+      "include": "build/installer.nsh"
+    },
+    "portable": {
+      "artifactName": "SnapJM-Portable-${version}.exe"
+    }
+  },
+  "keywords": [
+    "snap-camera",
+    "streamfog",
+    "augmented-reality",
+    "beauty-filter",
+    "skin-smoothing",
+    "teeth-whitening",
+    "electron",
+    "virtual-webcam",
+    "directshow",
+    "obs"
+  ],
+  "author": "SnapJM Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "electron": "^44.5.1",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^1.0.1",
+    "@snap/camera-kit": "^1.22.0",
+    "koffi": "^3.3.2"
+  }
+}
