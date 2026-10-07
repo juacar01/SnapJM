@@ -53,6 +53,10 @@ export class AppController {
   private recordedChunks: Blob[] = [];
   private isRecording = false;
 
+  // Background Unthrottled Metronome & Media Keep-Alive
+  private audioKeepAliveCtx: AudioContext | null = null;
+  private metronomeWorker: Worker | null = null;
+
   constructor(
     cameraService: ICameraService,
     faceTracker: IFaceTrackerService,
@@ -92,6 +96,7 @@ export class AppController {
     this.bindWindowControls();
     this.bindTabs();
     this.initSliders();
+    this.bindMakeupColorPickers();
     this.bindToolbarButtons();
     this.bindPresetButtons();
     this.bindVCamControls();
@@ -149,10 +154,13 @@ export class AppController {
       this.applyPreset('auto', false);
     }
 
-    // 5. Start 60 FPS Render Loop
-    requestAnimationFrame(this.renderLoop.bind(this));
+    // 5. Initialize Silent Audio Keep-Alive and Web Worker Metronome
+    this.initBackgroundKeepAlive();
 
-    // 6. Auto-start OBS Server
+    // 6. Start 60 FPS Render Loop
+    this.renderLoop();
+
+    // 7. Auto-start OBS Server
     setTimeout(() => {
       this.toggleServer().catch(() => {});
     }, 1200);
@@ -280,7 +288,7 @@ export class AppController {
           this.canvasEl.width = actualW;
           this.canvasEl.height = actualH;
 
-          const resLabel = actualW >= 1920 ? '1080p Full HD' : (actualW >= 1280 ? '720p HD' : `${actualW}p`);
+          const resLabel = actualW >= 3840 ? '4K UHD' : (actualW >= 2560 ? '2K QHD' : (actualW >= 1920 ? '1080p Full HD' : (actualW >= 1280 ? '720p HD' : `${actualW}p`)));
           if (this.resStatusText) this.resStatusText.textContent = `${actualW} × ${actualH} (${resLabel})`;
           this.showToast(`Cámara activa a ${actualFps} FPS (${actualW} × ${actualH})`);
 
@@ -430,15 +438,88 @@ export class AppController {
     }
   }
 
+  private initBackgroundKeepAlive(): void {
+    // A. Silent Audio Keep-Alive
+    // Informs Chromium that this renderer is playing active media,
+    // preventing Chromium from throttling or pausing camera video track decoding when hidden/minimized.
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) {
+        this.audioKeepAliveCtx = new AudioCtx();
+        const osc = this.audioKeepAliveCtx.createOscillator();
+        const gain = this.audioKeepAliveCtx.createGain();
+        gain.gain.value = 0.00001; // Inaudible to humans
+        osc.connect(gain);
+        gain.connect(this.audioKeepAliveCtx.destination);
+        osc.start();
+      }
+    } catch (e) {
+      console.warn('[AppController] Audio keep-alive note:', e);
+    }
+
+    // B. High-Precision Background Web Worker Metronome
+    // Web Workers execute on a separate OS thread and are NEVER throttled by browser window visibility.
+    try {
+      const metronomeScript = `
+        let timer = null;
+        self.onmessage = function(e) {
+          if (e.data === 'start') {
+            if (!timer) {
+              timer = setInterval(function() {
+                self.postMessage('tick');
+              }, 16);
+            }
+          } else if (e.data === 'stop') {
+            if (timer) {
+              clearInterval(timer);
+              timer = null;
+            }
+          }
+        };
+      `;
+      const blob = new Blob([metronomeScript], { type: 'application/javascript' });
+      this.metronomeWorker = new Worker(URL.createObjectURL(blob));
+      this.metronomeWorker.onmessage = () => {
+        if (document.hidden) {
+          this.renderLoop();
+        }
+      };
+
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          if (this.metronomeWorker) this.metronomeWorker.postMessage('start');
+        } else {
+          if (this.metronomeWorker) this.metronomeWorker.postMessage('stop');
+          requestAnimationFrame(this.renderLoop.bind(this));
+        }
+      });
+    } catch (e) {
+      console.warn('[AppController] Background worker metronome note:', e);
+    }
+  }
+
+  private lastRenderTimestamp = 0;
+
+  private scheduleNextFrame(): void {
+    if (!document.hidden) {
+      // Window is visible: use vsync-synchronized requestAnimationFrame
+      requestAnimationFrame(this.renderLoop.bind(this));
+    }
+    // When document.hidden is true, the dedicated background metronomeWorker fires every 16ms independently!
+  }
+
   // ----------------------------------------------------
-  // MAIN 60 FPS GPU RENDER LOOP (Zero Stalls)
+  // MAIN 60 FPS GPU RENDER LOOP (Continuous, Never Stalls)
   // ----------------------------------------------------
   private renderLoop(): void {
-    requestAnimationFrame(this.renderLoop.bind(this));
-
-    if (!this.videoEl || this.videoEl.readyState < 2) return;
+    this.scheduleNextFrame();
 
     const now = performance.now();
+    // Prevent duplicate calls during visibility change handshakes (< 7ms interval)
+    if (now - this.lastRenderTimestamp < 7) return;
+    this.lastRenderTimestamp = now;
+
+    if (!this.videoEl || this.videoEl.readyState < 2) return;
 
     // 1. Decoupled Face Landmark Tracking
     const trackResult = this.faceTracker.update(this.videoEl, now);
@@ -461,7 +542,13 @@ export class AppController {
     }
 
     // 3. WebGL GPU 60 FPS Render Pass
-    this.renderEngine.render(this.videoEl, trackResult ? trackResult.maskCanvas : null, aiCalib);
+    this.renderEngine.render(
+      this.videoEl,
+      trackResult ? trackResult.maskCanvas : null,
+      aiCalib,
+      trackResult ? trackResult.makeupCanvas : null,
+      trackResult ? trackResult.eyeMakeupCanvas : null
+    );
 
     // 4. Smooth 60 FPS Counter
     this.frameCount++;
@@ -528,6 +615,38 @@ export class AppController {
         console.warn(`[AppController] Error syncing slider '${param}':`, err);
       }
     });
+
+    // Sync AR Makeup Color Pickers
+    if (params.lipstickColorHex) {
+      const picker = document.getElementById('picker-lipstick') as HTMLInputElement | null;
+      if (picker) picker.value = params.lipstickColorHex;
+      this.updateSwatchActiveState('swatches-lipstick', params.lipstickColorHex);
+    }
+    if (params.blushColorHex) {
+      const picker = document.getElementById('picker-blush') as HTMLInputElement | null;
+      if (picker) picker.value = params.blushColorHex;
+      this.updateSwatchActiveState('swatches-blush', params.blushColorHex);
+    }
+    if (params.eyebrowColorHex) {
+      const picker = document.getElementById('picker-eyebrow') as HTMLInputElement | null;
+      if (picker) picker.value = params.eyebrowColorHex;
+      this.updateSwatchActiveState('swatches-eyebrow', params.eyebrowColorHex);
+    }
+    if (params.eyeshadowColorHex) {
+      const picker = document.getElementById('picker-eyeshadow') as HTMLInputElement | null;
+      if (picker) picker.value = params.eyeshadowColorHex;
+      this.updateSwatchActiveState('swatches-eyeshadow', params.eyeshadowColorHex);
+    }
+    if (params.eyelinerColorHex) {
+      const picker = document.getElementById('picker-eyeliner') as HTMLInputElement | null;
+      if (picker) picker.value = params.eyelinerColorHex;
+      this.updateSwatchActiveState('swatches-eyeliner', params.eyelinerColorHex);
+    }
+    if (params.mascaraColorHex) {
+      const picker = document.getElementById('picker-mascara') as HTMLInputElement | null;
+      if (picker) picker.value = params.mascaraColorHex;
+      this.updateSwatchActiveState('swatches-mascara', params.mascaraColorHex);
+    }
   }
 
   private scheduleSavePreferences(activePreset?: string): void {
@@ -586,6 +705,14 @@ export class AppController {
       eyes: { input: document.getElementById('sl-eyes') as HTMLInputElement, val: document.getElementById('val-eyes') as HTMLElement, param: 'eyeBrightening', scale: 0.01, unit: '%' },
       eyeBags: { input: document.getElementById('sl-eye-bags') as HTMLInputElement, val: document.getElementById('val-eye-bags') as HTMLElement, param: 'concealer', scale: 0.01, unit: '%' },
 
+      // AR Makeup Sliders
+      lipstick: { input: document.getElementById('sl-lipstick') as HTMLInputElement, val: document.getElementById('val-lipstick') as HTMLElement, param: 'lipstickIntensity', scale: 0.01, unit: '%' },
+      blush: { input: document.getElementById('sl-blush') as HTMLInputElement, val: document.getElementById('val-blush') as HTMLElement, param: 'blushIntensity', scale: 0.01, unit: '%' },
+      eyebrow: { input: document.getElementById('sl-eyebrow') as HTMLInputElement, val: document.getElementById('val-eyebrow') as HTMLElement, param: 'eyebrowIntensity', scale: 0.01, unit: '%' },
+      eyeshadow: { input: document.getElementById('sl-eyeshadow') as HTMLInputElement, val: document.getElementById('val-eyeshadow') as HTMLElement, param: 'eyeshadowIntensity', scale: 0.01, unit: '%' },
+      eyeliner: { input: document.getElementById('sl-eyeliner') as HTMLInputElement, val: document.getElementById('val-eyeliner') as HTMLElement, param: 'eyelinerIntensity', scale: 0.01, unit: '%' },
+      mascara: { input: document.getElementById('sl-mascara') as HTMLInputElement, val: document.getElementById('val-mascara') as HTMLElement, param: 'mascaraIntensity', scale: 0.01, unit: '%' },
+
       brightness: { input: document.getElementById('sl-brightness') as HTMLInputElement, val: document.getElementById('val-brightness') as HTMLElement, param: 'brightness', scale: 0.01, unit: '%', signed: true },
       contrast: { input: document.getElementById('sl-contrast') as HTMLInputElement, val: document.getElementById('val-contrast') as HTMLElement, param: 'contrast', scale: 0.01, unit: '' },
       saturation: { input: document.getElementById('sl-saturation') as HTMLInputElement, val: document.getElementById('val-saturation') as HTMLElement, param: 'saturation', scale: 0.01, unit: '' },
@@ -615,6 +742,75 @@ export class AppController {
         // Debounced persistence of current parameters
         this.scheduleSavePreferences('custom');
       });
+    });
+  }
+
+  private hexToRgb01(hex: string): [number, number, number] {
+    let clean = hex.replace('#', '');
+    if (clean.length === 3) {
+      clean = clean.split('').map(c => c + c).join('');
+    }
+    const num = parseInt(clean, 16);
+    const r = ((num >> 16) & 255) / 255;
+    const g = ((num >> 8) & 255) / 255;
+    const b = (num & 255) / 255;
+    return [Number(r.toFixed(3)), Number(g.toFixed(3)), Number(b.toFixed(3))];
+  }
+
+  private updateSwatchActiveState(containerId: string, hexColor: string): void {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    const target = hexColor.toLowerCase();
+    container.querySelectorAll('.swatch-btn').forEach(btn => {
+      const c = (btn.getAttribute('data-color') || '').toLowerCase();
+      btn.classList.toggle('active', c === target);
+    });
+  }
+
+  private bindMakeupColorPickers(): void {
+    const makeupConfigs: Array<{
+      pickerId: string;
+      swatchesId: string;
+      colorParam: 'lipstickColor' | 'blushColor' | 'eyebrowColor' | 'eyeshadowColor' | 'eyelinerColor' | 'mascaraColor';
+      hexParam: 'lipstickColorHex' | 'blushColorHex' | 'eyebrowColorHex' | 'eyeshadowColorHex' | 'eyelinerColorHex' | 'mascaraColorHex';
+    }> = [
+      { pickerId: 'picker-lipstick', swatchesId: 'swatches-lipstick', colorParam: 'lipstickColor', hexParam: 'lipstickColorHex' },
+      { pickerId: 'picker-blush', swatchesId: 'swatches-blush', colorParam: 'blushColor', hexParam: 'blushColorHex' },
+      { pickerId: 'picker-eyebrow', swatchesId: 'swatches-eyebrow', colorParam: 'eyebrowColor', hexParam: 'eyebrowColorHex' },
+      { pickerId: 'picker-eyeshadow', swatchesId: 'swatches-eyeshadow', colorParam: 'eyeshadowColor', hexParam: 'eyeshadowColorHex' },
+      { pickerId: 'picker-eyeliner', swatchesId: 'swatches-eyeliner', colorParam: 'eyelinerColor', hexParam: 'eyelinerColorHex' },
+      { pickerId: 'picker-mascara', swatchesId: 'swatches-mascara', colorParam: 'mascaraColor', hexParam: 'mascaraColorHex' }
+    ];
+
+    makeupConfigs.forEach(cfg => {
+      const picker = document.getElementById(cfg.pickerId) as HTMLInputElement | null;
+      const swatchesContainer = document.getElementById(cfg.swatchesId);
+
+      if (picker) {
+        picker.addEventListener('input', () => {
+          const hex = picker.value;
+          const rgb = this.hexToRgb01(hex);
+          this.renderEngine.updateParam(cfg.colorParam, rgb);
+          this.renderEngine.updateParam(cfg.hexParam, hex);
+          this.updateSwatchActiveState(cfg.swatchesId, hex);
+          this.scheduleSavePreferences('custom');
+        });
+      }
+
+      if (swatchesContainer) {
+        swatchesContainer.querySelectorAll('.swatch-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const hex = btn.getAttribute('data-color');
+            if (!hex) return;
+            if (picker) picker.value = hex;
+            const rgb = this.hexToRgb01(hex);
+            this.renderEngine.updateParam(cfg.colorParam, rgb);
+            this.renderEngine.updateParam(cfg.hexParam, hex);
+            this.updateSwatchActiveState(cfg.swatchesId, hex);
+            this.scheduleSavePreferences('custom');
+          });
+        });
+      }
     });
   }
 

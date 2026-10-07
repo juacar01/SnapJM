@@ -13,6 +13,8 @@ export interface TrackResult {
   hasFace: boolean;
   landmarks: LandmarkPoint[] | null;
   maskCanvas: HTMLCanvasElement | null;
+  makeupCanvas?: HTMLCanvasElement | null;
+  eyeMakeupCanvas?: HTMLCanvasElement | null;
 }
 
 export interface AICalibrationData {
@@ -53,6 +55,32 @@ export interface BeautyParams {
   teethBrightness: number;
   eyeBrightening: number;
   concealer: number;
+
+  // AR Makeup (Lipstick, Blush & Eyebrows)
+  lipstickIntensity: number;
+  lipstickColor: [number, number, number];
+  lipstickColorHex: string;
+
+  blushIntensity: number;
+  blushColor: [number, number, number];
+  blushColorHex: string;
+
+  eyebrowIntensity: number;
+  eyebrowColor: [number, number, number];
+  eyebrowColorHex: string;
+
+  // AR Eye Makeup (Eyeshadow, Eyeliner & Mascara)
+  eyeshadowIntensity: number;
+  eyeshadowColor: [number, number, number];
+  eyeshadowColorHex: string;
+
+  eyelinerIntensity: number;
+  eyelinerColor: [number, number, number];
+  eyelinerColorHex: string;
+
+  mascaraIntensity: number;
+  mascaraColor: [number, number, number];
+  mascaraColorHex: string;
 
   // Studio Lighting & Grading
   brightness: number;

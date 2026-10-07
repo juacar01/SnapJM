@@ -1,16 +1,85 @@
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog, Tray, Menu, powerSaveBlocker } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const StreamServer = require('./src/server/stream-server');
 const vcamService = require('./src/server/vcam-service');
 
-// Performance & GPU optimization flags
+// 1. Prevent Chromium from detecting window occlusion & pausing media/WebGL
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion,IntensiveWakeUpThrottling,ThrottleDisplayableMhtmlSubmission');
+// 2. Prevent renderer process from being backgrounded or downclocked
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+// 3. Prevent timer throttling when occluded/minimized
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
 app.commandLine.appendSwitch('enable-zero-copy');
 app.commandLine.appendSwitch('ignore-certificate-errors');
 
 let mainWindow = null;
 let streamServer = null;
+let tray = null;
+let isQuitting = false;
+
+function createTray() {
+  if (tray) return;
+  const iconPath = path.join(__dirname, 'public', 'icon.png');
+  tray = new Tray(iconPath);
+  tray.setToolTip('SnapJM - AR Beauty Studio & Virtual Cam');
+
+  const buildContextMenu = () => {
+    const isVcamRunning = vcamService && vcamService.isRunning;
+    return Menu.buildFromTemplate([
+      {
+        label: 'Abrir SnapJM',
+        click: () => {
+          if (mainWindow) {
+            mainWindow.show();
+            mainWindow.focus();
+          }
+        }
+      },
+      { type: 'separator' },
+      {
+        label: isVcamRunning ? '🟢 Cámara Virtual: Activa (60 FPS)' : '⚪ Cámara Virtual: Inactiva',
+        enabled: false
+      },
+      { type: 'separator' },
+      {
+        label: 'Salir de SnapJM',
+        click: () => {
+          isQuitting = true;
+          if (streamServer) streamServer.stop();
+          if (vcamService) vcamService.stop();
+          app.quit();
+        }
+      }
+    ]);
+  };
+
+  tray.setContextMenu(buildContextMenu());
+
+  tray.on('click', () => {
+    if (mainWindow) {
+      if (mainWindow.isVisible()) {
+        mainWindow.focus();
+      } else {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    }
+  });
+
+  tray.on('double-click', () => {
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  tray.on('right-click', () => {
+    tray.setContextMenu(buildContextMenu());
+  });
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -37,6 +106,20 @@ function createWindow() {
     console.log(`[Renderer] ${message}`);
   });
 
+  // Minimize directly to systray to prevent Windows DWM from destroying DirectX swapchain
+  mainWindow.on('minimize', (event) => {
+    event.preventDefault();
+    mainWindow.hide();
+  });
+
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow.hide();
+      return false;
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
     if (streamServer) {
@@ -50,7 +133,10 @@ function createWindow() {
 
 // Window controls IPC
 ipcMain.on('window:minimize', () => {
-  if (mainWindow) mainWindow.minimize();
+  if (mainWindow) {
+    // Hide to Systray to keep 60 FPS GPU execution active without DWM swapchain suspension
+    mainWindow.hide();
+  }
 });
 
 ipcMain.on('window:maximize', () => {
@@ -218,15 +304,29 @@ ipcMain.handle('system:get-paths', () => {
 });
 
 app.whenReady().then(() => {
+  try {
+    powerSaveBlocker.start('prevent-app-suspension');
+  } catch (e) {}
+
   createWindow();
+  createTray();
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    } else if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+    }
   });
 });
 
+app.on('before-quit', () => {
+  isQuitting = true;
+});
+
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  if (isQuitting) {
     app.quit();
   }
 });

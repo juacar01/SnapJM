@@ -168,6 +168,12 @@
     // Mask Canvas (Uploaded to WebGL Texture Unit 1)
     maskCanvas;
     maskCtx;
+    // Makeup Canvas (Uploaded to WebGL Texture Unit 2: R=Lips, G=Blush, B=Eyebrows)
+    makeupCanvas;
+    makeupCtx;
+    // Eye Makeup Canvas (Uploaded to WebGL Texture Unit 3: R=Eyeshadow, G=Eyeliner, B=Mascara)
+    eyeMakeupCanvas;
+    eyeMakeupCtx;
     // Decoupled probe canvas (480x270) to prevent 1440p ML bottleneck
     probeCanvas;
     probeCtx;
@@ -195,6 +201,118 @@
       178,
       88,
       95
+    ];
+    // AR Makeup: Lips contour (Clockwise outer perimeter)
+    outerLipIndices = [
+      61,
+      185,
+      40,
+      39,
+      37,
+      0,
+      267,
+      269,
+      270,
+      409,
+      291,
+      375,
+      321,
+      405,
+      314,
+      17,
+      84,
+      181,
+      91,
+      146
+    ];
+    // AR Makeup: Eyebrows loops
+    leftEyebrowIndices = [
+      70,
+      63,
+      105,
+      66,
+      107,
+      55,
+      65,
+      52,
+      53,
+      46
+    ];
+    rightEyebrowIndices = [
+      336,
+      296,
+      334,
+      293,
+      300,
+      285,
+      295,
+      282,
+      283,
+      276
+    ];
+    // AR Eye Makeup: Upper eyelid contours for eyeliner and mascara
+    leftUpperLidIndices = [
+      33,
+      246,
+      161,
+      160,
+      159,
+      158,
+      157,
+      173,
+      133
+    ];
+    rightUpperLidIndices = [
+      362,
+      398,
+      384,
+      385,
+      386,
+      387,
+      388,
+      466,
+      263
+    ];
+    // AR Eye Makeup: Eyeshadow eyelid & crease loops
+    leftEyeshadowIndices = [
+      33,
+      246,
+      161,
+      160,
+      159,
+      158,
+      157,
+      173,
+      133,
+      243,
+      190,
+      56,
+      28,
+      27,
+      29,
+      30,
+      247,
+      130
+    ];
+    rightEyeshadowIndices = [
+      362,
+      398,
+      384,
+      385,
+      386,
+      387,
+      388,
+      466,
+      263,
+      463,
+      414,
+      286,
+      258,
+      257,
+      259,
+      260,
+      467,
+      359
     ];
     leftEyeIndices = [
       33,
@@ -326,6 +444,10 @@
     constructor() {
       this.maskCanvas = document.createElement("canvas");
       this.maskCtx = this.maskCanvas.getContext("2d", { willReadFrequently: false });
+      this.makeupCanvas = document.createElement("canvas");
+      this.makeupCtx = this.makeupCanvas.getContext("2d", { willReadFrequently: false });
+      this.eyeMakeupCanvas = document.createElement("canvas");
+      this.eyeMakeupCtx = this.eyeMakeupCanvas.getContext("2d", { willReadFrequently: false });
       this.probeCanvas = document.createElement("canvas");
       this.probeCanvas.width = 480;
       this.probeCanvas.height = 270;
@@ -419,18 +541,45 @@
       return {
         hasFace: this.hasFace,
         landmarks: this.lastDetection,
-        maskCanvas: this.maskCanvas
+        maskCanvas: this.maskCanvas,
+        makeupCanvas: this.makeupCanvas,
+        eyeMakeupCanvas: this.eyeMakeupCanvas
       };
     }
-    renderMaskTexture(width, height, landmarks) {
+    renderMaskTexture(sourceWidth, sourceHeight, landmarks) {
+      const maxMaskW = 1280;
+      const maxMaskH = 720;
+      let width = sourceWidth;
+      let height = sourceHeight;
+      if (width > maxMaskW || height > maxMaskH) {
+        const scale = Math.min(maxMaskW / width, maxMaskH / height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
       if (this.maskCanvas.width !== width || this.maskCanvas.height !== height) {
         this.maskCanvas.width = width;
         this.maskCanvas.height = height;
+      }
+      if (this.makeupCanvas.width !== width || this.makeupCanvas.height !== height) {
+        this.makeupCanvas.width = width;
+        this.makeupCanvas.height = height;
+      }
+      if (this.eyeMakeupCanvas.width !== width || this.eyeMakeupCanvas.height !== height) {
+        this.eyeMakeupCanvas.width = width;
+        this.eyeMakeupCanvas.height = height;
       }
       const ctx = this.maskCtx;
       ctx.clearRect(0, 0, width, height);
       ctx.fillStyle = "#000000";
       ctx.fillRect(0, 0, width, height);
+      const mCtx = this.makeupCtx;
+      mCtx.clearRect(0, 0, width, height);
+      mCtx.fillStyle = "#000000";
+      mCtx.fillRect(0, 0, width, height);
+      const eCtx = this.eyeMakeupCtx;
+      eCtx.clearRect(0, 0, width, height);
+      eCtx.fillStyle = "#000000";
+      eCtx.fillRect(0, 0, width, height);
       if (!landmarks || landmarks.length === 0) return;
       ctx.save();
       ctx.filter = "blur(16px)";
@@ -476,6 +625,120 @@
       this.drawPolygon(ctx, landmarks, this.rightEyeIndices, width, height);
       ctx.fill();
       ctx.restore();
+      mCtx.save();
+      mCtx.filter = "blur(2.5px)";
+      mCtx.fillStyle = "rgba(255, 0, 0, 1.0)";
+      this.drawPolygon(mCtx, landmarks, this.outerLipIndices, width, height);
+      mCtx.fill();
+      mCtx.filter = "none";
+      mCtx.globalCompositeOperation = "destination-out";
+      this.drawPolygon(mCtx, landmarks, this.innerMouthIndices, width, height);
+      mCtx.fill();
+      mCtx.restore();
+      mCtx.save();
+      mCtx.globalCompositeOperation = "source-over";
+      const leftCheek = landmarks[117] || landmarks[50];
+      const rightCheek = landmarks[346] || landmarks[280];
+      const leftEye = landmarks[33];
+      const rightEye = landmarks[263];
+      let blushRadius = 40;
+      let eyeScale = 35;
+      if (leftEye && rightEye) {
+        const eyeDist = Math.hypot((rightEye.x - leftEye.x) * width, (rightEye.y - leftEye.y) * height);
+        blushRadius = Math.max(22, eyeDist * 0.45);
+        eyeScale = eyeDist;
+      }
+      [leftCheek, rightCheek].forEach((c) => {
+        if (!c) return;
+        const cx = c.x * width;
+        const cy = c.y * height;
+        const grad = mCtx.createRadialGradient(cx, cy, blushRadius * 0.08, cx, cy, blushRadius);
+        grad.addColorStop(0, "rgba(0, 255, 0, 0.95)");
+        grad.addColorStop(0.4, "rgba(0, 255, 0, 0.60)");
+        grad.addColorStop(0.8, "rgba(0, 255, 0, 0.18)");
+        grad.addColorStop(1, "rgba(0, 255, 0, 0.0)");
+        mCtx.fillStyle = grad;
+        mCtx.beginPath();
+        mCtx.arc(cx, cy, blushRadius, 0, Math.PI * 2);
+        mCtx.fill();
+      });
+      mCtx.restore();
+      mCtx.save();
+      mCtx.globalCompositeOperation = "source-over";
+      mCtx.filter = "blur(2.2px)";
+      mCtx.fillStyle = "rgba(0, 0, 255, 1.0)";
+      this.drawPolygon(mCtx, landmarks, this.leftEyebrowIndices, width, height);
+      mCtx.fill();
+      this.drawPolygon(mCtx, landmarks, this.rightEyebrowIndices, width, height);
+      mCtx.fill();
+      mCtx.restore();
+      eCtx.save();
+      eCtx.filter = "blur(7px)";
+      eCtx.fillStyle = "rgba(255, 0, 0, 0.92)";
+      this.drawPolygon(eCtx, landmarks, this.leftEyeshadowIndices, width, height);
+      eCtx.fill();
+      this.drawPolygon(eCtx, landmarks, this.rightEyeshadowIndices, width, height);
+      eCtx.fill();
+      eCtx.filter = "none";
+      eCtx.globalCompositeOperation = "destination-out";
+      this.drawPolygon(eCtx, landmarks, this.leftEyeIndices, width, height);
+      eCtx.fill();
+      this.drawPolygon(eCtx, landmarks, this.rightEyeIndices, width, height);
+      eCtx.fill();
+      eCtx.restore();
+      eCtx.save();
+      eCtx.globalCompositeOperation = "source-over";
+      const lineWidth = Math.max(2.2, eyeScale * 0.038);
+      eCtx.lineWidth = lineWidth;
+      eCtx.lineCap = "round";
+      eCtx.lineJoin = "round";
+      eCtx.strokeStyle = "rgba(0, 255, 0, 1.0)";
+      this.drawLine(eCtx, landmarks, this.leftUpperLidIndices, width, height);
+      const leftOuter = landmarks[33];
+      const leftTemple = landmarks[130];
+      if (leftOuter && leftTemple) {
+        eCtx.lineTo(
+          (leftOuter.x + (leftTemple.x - leftOuter.x) * 0.45) * width,
+          (leftOuter.y + (leftTemple.y - leftOuter.y) * 0.45 - eyeScale * 0.025) * height
+        );
+      }
+      eCtx.stroke();
+      this.drawLine(eCtx, landmarks, this.rightUpperLidIndices, width, height);
+      const rightOuter = landmarks[263];
+      const rightTemple = landmarks[359];
+      if (rightOuter && rightTemple) {
+        eCtx.lineTo(
+          (rightOuter.x + (rightTemple.x - rightOuter.x) * 0.45) * width,
+          (rightOuter.y + (rightTemple.y - rightOuter.y) * 0.45 - eyeScale * 0.025) * height
+        );
+      }
+      eCtx.stroke();
+      eCtx.restore();
+      eCtx.save();
+      eCtx.globalCompositeOperation = "source-over";
+      eCtx.filter = "blur(1.0px)";
+      eCtx.lineWidth = Math.max(2.8, eyeScale * 0.048);
+      eCtx.lineCap = "round";
+      eCtx.strokeStyle = "rgba(0, 0, 255, 0.95)";
+      this.drawLine(eCtx, landmarks, this.leftUpperLidIndices, width, height);
+      eCtx.stroke();
+      this.drawLine(eCtx, landmarks, this.rightUpperLidIndices, width, height);
+      eCtx.stroke();
+      eCtx.lineWidth = Math.max(1.4, eyeScale * 0.022);
+      this.drawLine(eCtx, landmarks, this.leftEyeIndices, width, height);
+      eCtx.stroke();
+      this.drawLine(eCtx, landmarks, this.rightEyeIndices, width, height);
+      eCtx.stroke();
+      eCtx.restore();
+    }
+    drawLine(ctx, landmarks, indices, width, height) {
+      ctx.beginPath();
+      const first = landmarks[indices[0]];
+      ctx.moveTo(first.x * width, first.y * height);
+      for (let i = 1; i < indices.length; i++) {
+        const pt = landmarks[indices[i]];
+        ctx.lineTo(pt.x * width, pt.y * height);
+      }
     }
     drawPolygon(ctx, landmarks, indices, width, height) {
       ctx.beginPath();
@@ -494,6 +757,18 @@
       }
       this.maskCtx.fillStyle = "#000000";
       this.maskCtx.fillRect(0, 0, width, height);
+      if (this.makeupCanvas.width !== width || this.makeupCanvas.height !== height) {
+        this.makeupCanvas.width = width;
+        this.makeupCanvas.height = height;
+      }
+      this.makeupCtx.fillStyle = "#000000";
+      this.makeupCtx.fillRect(0, 0, width, height);
+      if (this.eyeMakeupCanvas.width !== width || this.eyeMakeupCanvas.height !== height) {
+        this.eyeMakeupCanvas.width = width;
+        this.eyeMakeupCanvas.height = height;
+      }
+      this.eyeMakeupCtx.fillStyle = "#000000";
+      this.eyeMakeupCtx.fillRect(0, 0, width, height);
     }
     dispose() {
       if (this.faceLandmarker) {
@@ -757,6 +1032,8 @@
     program = null;
     cameraTexture = null;
     maskTexture = null;
+    makeupTexture = null;
+    eyeMakeupTexture = null;
     uLoc = {};
     params = {
       denoiseEnabled: true,
@@ -775,6 +1052,26 @@
       teethBrightness: 0.06,
       eyeBrightening: 0.25,
       concealer: 0.5,
+      // AR Makeup
+      lipstickIntensity: 0,
+      lipstickColor: [0.84, 0.13, 0.42],
+      lipstickColorHex: "#d6226c",
+      blushIntensity: 0,
+      blushColor: [0.96, 0.45, 0.53],
+      blushColorHex: "#f47287",
+      eyebrowIntensity: 0,
+      eyebrowColor: [0.23, 0.16, 0.11],
+      eyebrowColorHex: "#3b281c",
+      // AR Eye Makeup
+      eyeshadowIntensity: 0,
+      eyeshadowColor: [0.72, 0.43, 0.47],
+      eyeshadowColorHex: "#b76e79",
+      eyelinerIntensity: 0,
+      eyelinerColor: [0.04, 0.04, 0.04],
+      eyelinerColorHex: "#0a0a0a",
+      mascaraIntensity: 0,
+      mascaraColor: [0.04, 0.04, 0.04],
+      mascaraColorHex: "#0a0a0a",
       brightness: 0,
       contrast: 1.02,
       saturation: 1.02,
@@ -819,6 +1116,8 @@
       precision highp float;
       uniform sampler2D u_cameraTexture;
       uniform sampler2D u_maskTexture;
+      uniform sampler2D u_makeupTexture;
+      uniform sampler2D u_eyeMakeupTexture;
       uniform vec2 u_resolution;
 
       // ====================================================
@@ -855,6 +1154,30 @@
       uniform float u_teethBrightness;
       uniform float u_eyeBrightening;
       uniform float u_concealer;
+
+      // ====================================================
+      // UNIFORMS: PASO 3B - MAQUILLAJE AR (LABIOS, RUBOR, CEJAS)
+      // ====================================================
+      uniform float u_lipstickIntensity;
+      uniform vec3 u_lipstickColor;
+
+      uniform float u_blushIntensity;
+      uniform vec3 u_blushColor;
+
+      uniform float u_eyebrowIntensity;
+      uniform vec3 u_eyebrowColor;
+
+      // ====================================================
+      // UNIFORMS: PASO 3C - MAQUILLAJE DE OJOS (SOMBRAS, DELINEADOR, PESTA\xD1INA)
+      // ====================================================
+      uniform float u_eyeshadowIntensity;
+      uniform vec3 u_eyeshadowColor;
+
+      uniform float u_eyelinerIntensity;
+      uniform vec3 u_eyelinerColor;
+
+      uniform float u_mascaraIntensity;
+      uniform vec3 u_mascaraColor;
 
       uniform float u_brightness;
       uniform float u_contrast;
@@ -1085,6 +1408,8 @@
         // CON EL RESULTADO DE LOS AJUSTES ANTERIORES (step2Denoised)
         // ====================================================
         vec4 mask = texture2D(u_maskTexture, texUv);
+        vec4 makeup = texture2D(u_makeupTexture, texUv);
+        vec4 eyeMakeup = texture2D(u_eyeMakeupTexture, texUv);
         vec3 color = step2Denoised;
 
         // 3.1. Deteccion de piel robusta sobre la imagen limpia y calibrada
@@ -1227,7 +1552,74 @@
           }
         }
 
-        // 3.8. Enfoque de texturas HD (Sobre la imagen denoised)
+        // ====================================================
+        // 3.8. MAQUILLAJE AR: LABIAL (LIPSTICK)
+        // ====================================================
+        if (u_lipstickIntensity > 0.01 && makeup.r > 0.02) {
+          float lipWeight = makeup.r;
+          // Proteger dientes y cavidad bucal
+          lipWeight *= clamp(1.0 - mouthArea * 2.2, 0.0, 1.0);
+
+          float lipLum = dot(color, vec3(0.299, 0.587, 0.114));
+          // Modulacion Soft Light para retener brillo especular del labio
+          vec3 lipTint = color * (u_lipstickColor * 1.45);
+          lipTint = mix(lipTint, u_lipstickColor * (lipLum * 0.70 + 0.30), 0.35);
+
+          float blendFactor = clamp(lipWeight * u_lipstickIntensity * 0.95, 0.0, 0.92);
+          color = mix(color, lipTint, blendFactor);
+        }
+
+        // ====================================================
+        // 3.9. MAQUILLAJE AR: RUBOR (BLUSH)
+        // ====================================================
+        if (u_blushIntensity > 0.01 && makeup.g > 0.02) {
+          float blushWeight = makeup.g;
+          vec3 blushTint = mix(color, u_blushColor, 0.40);
+          float blendFactor = clamp(blushWeight * u_blushIntensity * 0.80, 0.0, 0.85);
+          color = mix(color, blushTint, blendFactor);
+        }
+
+        // ====================================================
+        // 3.10. MAQUILLAJE AR: CEJAS (EYEBROWS)
+        // ====================================================
+        if (u_eyebrowIntensity > 0.01 && makeup.b > 0.02) {
+          float browWeight = makeup.b;
+          vec3 browTint = color * (u_eyebrowColor * 1.25);
+          float blendFactor = clamp(browWeight * u_eyebrowIntensity * 0.85, 0.0, 0.90);
+          color = mix(color, browTint, blendFactor);
+        }
+
+        // ====================================================
+        // 3.11. MAQUILLAJE DE OJOS: SOMBRAS (EYESHADOW)
+        // ====================================================
+        if (u_eyeshadowIntensity > 0.01 && eyeMakeup.r > 0.02) {
+          float shadowWeight = eyeMakeup.r * clamp(1.0 - mask.b * 2.8, 0.0, 1.0);
+          vec3 shadowTint = mix(color, u_eyeshadowColor, 0.45);
+          float blendFactor = clamp(shadowWeight * u_eyeshadowIntensity * 0.85, 0.0, 0.90);
+          color = mix(color, shadowTint, blendFactor);
+        }
+
+        // ====================================================
+        // 3.12. MAQUILLAJE DE OJOS: DELINEADOR (EYELINER)
+        // ====================================================
+        if (u_eyelinerIntensity > 0.01 && eyeMakeup.g > 0.02) {
+          float linerWeight = eyeMakeup.g;
+          vec3 linerTint = mix(color * 0.20, u_eyelinerColor, 0.70);
+          float blendFactor = clamp(linerWeight * u_eyelinerIntensity * 0.95, 0.0, 0.98);
+          color = mix(color, linerTint, blendFactor);
+        }
+
+        // ====================================================
+        // 3.13. MAQUILLAJE DE OJOS: PESTA\xD1INA / R\xCDMEL (MASCARA)
+        // ====================================================
+        if (u_mascaraIntensity > 0.01 && eyeMakeup.b > 0.02) {
+          float mascaraWeight = eyeMakeup.b;
+          vec3 mascaraTint = mix(color * 0.15, u_mascaraColor, 0.65);
+          float blendFactor = clamp(mascaraWeight * u_mascaraIntensity * 0.95, 0.0, 0.98);
+          color = mix(color, mascaraTint, blendFactor);
+        }
+
+        // 3.14. Enfoque de texturas HD (Sobre la imagen denoised)
         if (u_sharpen > 0.01) {
           vec2 texel = 1.0 / u_resolution;
           vec3 n = sampleCalibrated(texUv + vec2(0.0, -texel.y));
@@ -1239,7 +1631,7 @@
           color = clamp(color + highPass * u_sharpen * 1.5, 0.0, 1.0);
         }
 
-        // 3.9. Gradacion de color final (Brillo, contraste, saturacion, temperatura, vineta)
+        // 3.15. Gradacion de color final (Brillo, contraste, saturacion, temperatura, vineta)
         color += vec3(u_brightness);
         color = (color - 0.5) * u_contrast + 0.5;
 
@@ -1291,9 +1683,13 @@
       gl.vertexAttribPointer(aPosLoc, 2, gl.FLOAT, false, 0, 0);
       this.cameraTexture = this.createTexture();
       this.maskTexture = this.createTexture();
+      this.makeupTexture = this.createTexture();
+      this.eyeMakeupTexture = this.createTexture();
       this.uLoc = {
         u_cameraTexture: gl.getUniformLocation(this.program, "u_cameraTexture"),
         u_maskTexture: gl.getUniformLocation(this.program, "u_maskTexture"),
+        u_makeupTexture: gl.getUniformLocation(this.program, "u_makeupTexture"),
+        u_eyeMakeupTexture: gl.getUniformLocation(this.program, "u_eyeMakeupTexture"),
         u_resolution: gl.getUniformLocation(this.program, "u_resolution"),
         u_denoiseAuto: gl.getUniformLocation(this.program, "u_denoiseAuto"),
         u_aiDenoiseIntensity: gl.getUniformLocation(this.program, "u_aiDenoiseIntensity"),
@@ -1316,6 +1712,18 @@
         u_teethBrightness: gl.getUniformLocation(this.program, "u_teethBrightness"),
         u_eyeBrightening: gl.getUniformLocation(this.program, "u_eyeBrightening"),
         u_concealer: gl.getUniformLocation(this.program, "u_concealer"),
+        u_lipstickIntensity: gl.getUniformLocation(this.program, "u_lipstickIntensity"),
+        u_lipstickColor: gl.getUniformLocation(this.program, "u_lipstickColor"),
+        u_blushIntensity: gl.getUniformLocation(this.program, "u_blushIntensity"),
+        u_blushColor: gl.getUniformLocation(this.program, "u_blushColor"),
+        u_eyebrowIntensity: gl.getUniformLocation(this.program, "u_eyebrowIntensity"),
+        u_eyebrowColor: gl.getUniformLocation(this.program, "u_eyebrowColor"),
+        u_eyeshadowIntensity: gl.getUniformLocation(this.program, "u_eyeshadowIntensity"),
+        u_eyeshadowColor: gl.getUniformLocation(this.program, "u_eyeshadowColor"),
+        u_eyelinerIntensity: gl.getUniformLocation(this.program, "u_eyelinerIntensity"),
+        u_eyelinerColor: gl.getUniformLocation(this.program, "u_eyelinerColor"),
+        u_mascaraIntensity: gl.getUniformLocation(this.program, "u_mascaraIntensity"),
+        u_mascaraColor: gl.getUniformLocation(this.program, "u_mascaraColor"),
         u_brightness: gl.getUniformLocation(this.program, "u_brightness"),
         u_contrast: gl.getUniformLocation(this.program, "u_contrast"),
         u_saturation: gl.getUniformLocation(this.program, "u_saturation"),
@@ -1360,7 +1768,7 @@
     setParams(newParams) {
       Object.assign(this.params, newParams);
     }
-    render(videoElement, maskCanvas, aiCalibration) {
+    render(videoElement, maskCanvas, aiCalibration, makeupCanvas, eyeMakeupCanvas) {
       const gl = this.gl;
       if (!gl || !this.program || !videoElement) return;
       if (typeof videoElement.readyState === "number" && videoElement.readyState < 2) return;
@@ -1383,6 +1791,18 @@
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, maskCanvas);
       }
       gl.uniform1i(this.uLoc.u_maskTexture, 1);
+      gl.activeTexture(gl.TEXTURE2);
+      gl.bindTexture(gl.TEXTURE_2D, this.makeupTexture);
+      if (makeupCanvas && makeupCanvas.width > 0 && makeupCanvas.height > 0) {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, makeupCanvas);
+      }
+      gl.uniform1i(this.uLoc.u_makeupTexture, 2);
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, this.eyeMakeupTexture);
+      if (eyeMakeupCanvas && eyeMakeupCanvas.width > 0 && eyeMakeupCanvas.height > 0) {
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, eyeMakeupCanvas);
+      }
+      gl.uniform1i(this.uLoc.u_eyeMakeupTexture, 3);
       gl.uniform2f(this.uLoc.u_resolution, width, height);
       if (aiCalibration) {
         gl.uniform3f(this.uLoc.u_aiWhiteBalance, aiCalibration.whiteBalance[0], aiCalibration.whiteBalance[1], aiCalibration.whiteBalance[2]);
@@ -1417,6 +1837,18 @@
       gl.uniform1f(this.uLoc.u_teethBrightness, this.params.teethBrightness);
       gl.uniform1f(this.uLoc.u_eyeBrightening, this.params.eyeBrightening);
       gl.uniform1f(this.uLoc.u_concealer, this.params.concealer);
+      gl.uniform1f(this.uLoc.u_lipstickIntensity, this.params.lipstickIntensity);
+      gl.uniform3f(this.uLoc.u_lipstickColor, this.params.lipstickColor[0], this.params.lipstickColor[1], this.params.lipstickColor[2]);
+      gl.uniform1f(this.uLoc.u_blushIntensity, this.params.blushIntensity);
+      gl.uniform3f(this.uLoc.u_blushColor, this.params.blushColor[0], this.params.blushColor[1], this.params.blushColor[2]);
+      gl.uniform1f(this.uLoc.u_eyebrowIntensity, this.params.eyebrowIntensity);
+      gl.uniform3f(this.uLoc.u_eyebrowColor, this.params.eyebrowColor[0], this.params.eyebrowColor[1], this.params.eyebrowColor[2]);
+      gl.uniform1f(this.uLoc.u_eyeshadowIntensity, this.params.eyeshadowIntensity);
+      gl.uniform3f(this.uLoc.u_eyeshadowColor, this.params.eyeshadowColor[0], this.params.eyeshadowColor[1], this.params.eyeshadowColor[2]);
+      gl.uniform1f(this.uLoc.u_eyelinerIntensity, this.params.eyelinerIntensity);
+      gl.uniform3f(this.uLoc.u_eyelinerColor, this.params.eyelinerColor[0], this.params.eyelinerColor[1], this.params.eyelinerColor[2]);
+      gl.uniform1f(this.uLoc.u_mascaraIntensity, this.params.mascaraIntensity);
+      gl.uniform3f(this.uLoc.u_mascaraColor, this.params.mascaraColor[0], this.params.mascaraColor[1], this.params.mascaraColor[2]);
       gl.uniform1f(this.uLoc.u_brightness, this.params.brightness);
       gl.uniform1f(this.uLoc.u_contrast, this.params.contrast);
       gl.uniform1f(this.uLoc.u_saturation, this.params.saturation);
@@ -1429,8 +1861,12 @@
       gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
     dispose() {
-      if (this.gl && this.program) {
-        this.gl.deleteProgram(this.program);
+      if (this.gl) {
+        if (this.program) this.gl.deleteProgram(this.program);
+        if (this.cameraTexture) this.gl.deleteTexture(this.cameraTexture);
+        if (this.maskTexture) this.gl.deleteTexture(this.maskTexture);
+        if (this.makeupTexture) this.gl.deleteTexture(this.makeupTexture);
+        if (this.eyeMakeupTexture) this.gl.deleteTexture(this.eyeMakeupTexture);
       }
     }
   };
@@ -1489,10 +1925,69 @@
   // src/services/vcam/vcam.service.ts
   var VirtualCamService = class {
     running = false;
+    worker = null;
+    isWorkerBusy = false;
+    lastFrameTimestamp = 0;
+    // Fallback 2D canvas if Web Worker is unavailable in environment
     offscreenCanvas = null;
     ctx2d = null;
-    lastFrameTimestamp = 0;
-    isProcessingFrame = false;
+    constructor() {
+      this.initWorker();
+    }
+    initWorker() {
+      if (typeof Worker === "undefined") return;
+      try {
+        const workerCode = `
+        let canvas = null;
+        let ctx = null;
+
+        self.onmessage = function(e) {
+          const { bitmap, targetW, targetH } = e.data;
+          if (!bitmap) return;
+
+          try {
+            if (!canvas || canvas.width !== targetW || canvas.height !== targetH) {
+              canvas = new OffscreenCanvas(targetW, targetH);
+              ctx = canvas.getContext('2d', { willReadFrequently: true });
+            }
+
+            if (ctx) {
+              ctx.save();
+              ctx.translate(0, targetH);
+              ctx.scale(1, -1);
+              ctx.drawImage(bitmap, 0, 0, targetW, targetH);
+              ctx.restore();
+
+              const imgData = ctx.getImageData(0, 0, targetW, targetH);
+              const buffer = imgData.data.buffer;
+              // Zero-copy transfer back to the main thread
+              self.postMessage({ buffer, width: targetW, height: targetH }, [buffer]);
+            }
+          } catch (err) {
+            self.postMessage({ error: err.message });
+          } finally {
+            bitmap.close();
+          }
+        };
+      `;
+        const blob = new Blob([workerCode], { type: "application/javascript" });
+        const workerUrl = URL.createObjectURL(blob);
+        this.worker = new Worker(workerUrl);
+        this.worker.onmessage = (e) => {
+          this.isWorkerBusy = false;
+          if (e.data && e.data.buffer && window.electronAPI && this.running) {
+            window.electronAPI.vcamSendFrame(e.data.buffer, e.data.width, e.data.height);
+          }
+        };
+        this.worker.onerror = (err) => {
+          console.warn("[VirtualCamService] Background Worker error, using fallback:", err);
+          this.isWorkerBusy = false;
+        };
+      } catch (e) {
+        console.warn("[VirtualCamService] Could not initialize Worker, fallback mode active:", e);
+        this.worker = null;
+      }
+    }
     async getStatus() {
       if (!window.electronAPI) {
         return { installed: false, running: false, fps: 0, width: 1920, height: 1080 };
@@ -1515,6 +2010,7 @@
     }
     async start(width = 1920, height = 1080) {
       if (!window.electronAPI) return false;
+      this.isWorkerBusy = false;
       const res = await window.electronAPI.vcamStart(width, height);
       this.running = res.running;
       return this.running;
@@ -1523,41 +2019,68 @@
       if (!window.electronAPI) return false;
       await window.electronAPI.vcamStop();
       this.running = false;
+      this.isWorkerBusy = false;
       return true;
     }
     isRunning() {
       return this.running;
     }
     sendFrame(glCanvas) {
-      if (!this.running || !window.electronAPI || this.isProcessingFrame) return;
-      const w = glCanvas.width;
-      const h = glCanvas.height;
-      if (w <= 0 || h <= 0) return;
+      if (!this.running || !window.electronAPI) return;
+      const sourceW = glCanvas.width;
+      const sourceH = glCanvas.height;
+      if (sourceW <= 0 || sourceH <= 0) return;
       const now = performance.now();
-      if (now - this.lastFrameTimestamp < 14) return;
+      if (now - this.lastFrameTimestamp < 15) return;
+      let targetW = sourceW;
+      let targetH = sourceH;
+      const maxVcamW = 1920;
+      const maxVcamH = 1080;
+      if (targetW > maxVcamW || targetH > maxVcamH) {
+        const scale = Math.min(maxVcamW / targetW, maxVcamH / targetH);
+        targetW = Math.round(targetW * scale);
+        targetH = Math.round(targetH * scale);
+      }
+      if (this.worker) {
+        if (this.isWorkerBusy) return;
+        this.isWorkerBusy = true;
+        this.lastFrameTimestamp = now;
+        window.createImageBitmap(glCanvas).then((bitmap) => {
+          if (!this.running || !this.worker) {
+            bitmap.close();
+            this.isWorkerBusy = false;
+            return;
+          }
+          this.worker.postMessage({ bitmap, targetW, targetH }, [bitmap]);
+        }).catch(() => {
+          this.isWorkerBusy = false;
+        });
+        return;
+      }
+      if (this.isWorkerBusy) return;
       this.lastFrameTimestamp = now;
       if (!this.offscreenCanvas) {
         this.offscreenCanvas = document.createElement("canvas");
         this.ctx2d = this.offscreenCanvas.getContext("2d", { willReadFrequently: true });
       }
-      if (this.offscreenCanvas.width !== w || this.offscreenCanvas.height !== h) {
-        this.offscreenCanvas.width = w;
-        this.offscreenCanvas.height = h;
+      if (this.offscreenCanvas.width !== targetW || this.offscreenCanvas.height !== targetH) {
+        this.offscreenCanvas.width = targetW;
+        this.offscreenCanvas.height = targetH;
       }
       if (!this.ctx2d) return;
-      this.isProcessingFrame = true;
+      this.isWorkerBusy = true;
       try {
         this.ctx2d.save();
-        this.ctx2d.translate(0, h);
+        this.ctx2d.translate(0, targetH);
         this.ctx2d.scale(1, -1);
-        this.ctx2d.drawImage(glCanvas, 0, 0, w, h);
+        this.ctx2d.drawImage(glCanvas, 0, 0, targetW, targetH);
         this.ctx2d.restore();
-        const imgData = this.ctx2d.getImageData(0, 0, w, h);
-        window.electronAPI.vcamSendFrame(imgData.data.buffer, w, h);
+        const imgData = this.ctx2d.getImageData(0, 0, targetW, targetH);
+        window.electronAPI.vcamSendFrame(imgData.data.buffer, targetW, targetH);
       } catch (e) {
         console.warn("[VirtualCamService] Error capturing/sending frame:", e);
       } finally {
-        this.isProcessingFrame = false;
+        this.isWorkerBusy = false;
       }
     }
   };
@@ -1586,6 +2109,24 @@
         teethBrightness: 0.06,
         eyeBrightening: 0.25,
         concealer: 0.5,
+        lipstickIntensity: 0,
+        lipstickColor: [0.84, 0.13, 0.42],
+        lipstickColorHex: "#d6226c",
+        blushIntensity: 0,
+        blushColor: [0.96, 0.45, 0.53],
+        blushColorHex: "#f47287",
+        eyebrowIntensity: 0,
+        eyebrowColor: [0.23, 0.16, 0.11],
+        eyebrowColorHex: "#3b281c",
+        eyeshadowIntensity: 0,
+        eyeshadowColor: [0.72, 0.43, 0.47],
+        eyeshadowColorHex: "#b76e79",
+        eyelinerIntensity: 0,
+        eyelinerColor: [0.04, 0.04, 0.04],
+        eyelinerColorHex: "#0a0a0a",
+        mascaraIntensity: 0,
+        mascaraColor: [0.04, 0.04, 0.04],
+        mascaraColorHex: "#0a0a0a",
         brightness: 0,
         contrast: 1.02,
         saturation: 1.02,
@@ -1610,6 +2151,24 @@
         teethBrightness: 0.04,
         eyeBrightening: 0.2,
         concealer: 0.35,
+        lipstickIntensity: 0,
+        lipstickColor: [0.84, 0.13, 0.42],
+        lipstickColorHex: "#d6226c",
+        blushIntensity: 0,
+        blushColor: [0.96, 0.45, 0.53],
+        blushColorHex: "#f47287",
+        eyebrowIntensity: 0,
+        eyebrowColor: [0.23, 0.16, 0.11],
+        eyebrowColorHex: "#3b281c",
+        eyeshadowIntensity: 0,
+        eyeshadowColor: [0.72, 0.43, 0.47],
+        eyeshadowColorHex: "#b76e79",
+        eyelinerIntensity: 0,
+        eyelinerColor: [0.04, 0.04, 0.04],
+        eyelinerColorHex: "#0a0a0a",
+        mascaraIntensity: 0,
+        mascaraColor: [0.04, 0.04, 0.04],
+        mascaraColorHex: "#0a0a0a",
         brightness: 0,
         contrast: 1.01,
         saturation: 1.01,
@@ -1634,6 +2193,24 @@
         teethBrightness: 0.08,
         eyeBrightening: 0.3,
         concealer: 0.65,
+        lipstickIntensity: 0.18,
+        lipstickColor: [0.85, 0.33, 0.42],
+        lipstickColorHex: "#d9546b",
+        blushIntensity: 0.2,
+        blushColor: [0.97, 0.59, 0.56],
+        blushColorHex: "#f8978f",
+        eyebrowIntensity: 0.12,
+        eyebrowColor: [0.23, 0.16, 0.11],
+        eyebrowColorHex: "#3b281c",
+        eyeshadowIntensity: 0.15,
+        eyeshadowColor: [0.77, 0.61, 0.42],
+        eyeshadowColorHex: "#c59b6c",
+        eyelinerIntensity: 0.2,
+        eyelinerColor: [0.17, 0.11, 0.09],
+        eyelinerColorHex: "#2c1b18",
+        mascaraIntensity: 0.25,
+        mascaraColor: [0.04, 0.04, 0.04],
+        mascaraColorHex: "#0a0a0a",
         brightness: 0.01,
         contrast: 1.03,
         saturation: 1.02,
@@ -1658,6 +2235,24 @@
         teethBrightness: 0.08,
         eyeBrightening: 0.3,
         concealer: 0.55,
+        lipstickIntensity: 0,
+        lipstickColor: [0.84, 0.13, 0.42],
+        lipstickColorHex: "#d6226c",
+        blushIntensity: 0,
+        blushColor: [0.96, 0.45, 0.53],
+        blushColorHex: "#f47287",
+        eyebrowIntensity: 0,
+        eyebrowColor: [0.23, 0.16, 0.11],
+        eyebrowColorHex: "#3b281c",
+        eyeshadowIntensity: 0,
+        eyeshadowColor: [0.72, 0.43, 0.47],
+        eyeshadowColorHex: "#b76e79",
+        eyelinerIntensity: 0,
+        eyelinerColor: [0.04, 0.04, 0.04],
+        eyelinerColorHex: "#0a0a0a",
+        mascaraIntensity: 0,
+        mascaraColor: [0.04, 0.04, 0.04],
+        mascaraColorHex: "#0a0a0a",
         brightness: 0.01,
         contrast: 1.03,
         saturation: 1.03,
@@ -1682,6 +2277,24 @@
         teethBrightness: 0.1,
         eyeBrightening: 0.38,
         concealer: 0.7,
+        lipstickIntensity: 0.4,
+        lipstickColor: [0.84, 0.13, 0.42],
+        lipstickColorHex: "#d6226c",
+        blushIntensity: 0.3,
+        blushColor: [0.96, 0.45, 0.53],
+        blushColorHex: "#f47287",
+        eyebrowIntensity: 0.25,
+        eyebrowColor: [0.23, 0.16, 0.11],
+        eyebrowColorHex: "#3b281c",
+        eyeshadowIntensity: 0.35,
+        eyeshadowColor: [0.72, 0.43, 0.47],
+        eyeshadowColorHex: "#b76e79",
+        eyelinerIntensity: 0.45,
+        eyelinerColor: [0.04, 0.04, 0.04],
+        eyelinerColorHex: "#0a0a0a",
+        mascaraIntensity: 0.5,
+        mascaraColor: [0.04, 0.04, 0.04],
+        mascaraColorHex: "#0a0a0a",
         brightness: 0.02,
         contrast: 1.05,
         saturation: 1.05,
@@ -1704,6 +2317,12 @@
         teethBrightness: 0,
         eyeBrightening: 0,
         concealer: 0,
+        lipstickIntensity: 0,
+        blushIntensity: 0,
+        eyebrowIntensity: 0,
+        eyeshadowIntensity: 0,
+        eyelinerIntensity: 0,
+        mascaraIntensity: 0,
         brightness: 0,
         contrast: 1,
         saturation: 1,
@@ -1867,6 +2486,9 @@
     mediaRecorder = null;
     recordedChunks = [];
     isRecording = false;
+    // Background Unthrottled Metronome & Media Keep-Alive
+    audioKeepAliveCtx = null;
+    metronomeWorker = null;
     constructor(cameraService, faceTracker, calibrator, renderEngine, streamService, vcamService, presetManager, storageService) {
       this.cameraService = cameraService;
       this.faceTracker = faceTracker;
@@ -1894,6 +2516,7 @@
       this.bindWindowControls();
       this.bindTabs();
       this.initSliders();
+      this.bindMakeupColorPickers();
       this.bindToolbarButtons();
       this.bindPresetButtons();
       this.bindVCamControls();
@@ -1938,7 +2561,8 @@
         console.warn("[AppController] Error applying saved parameters, resetting to safe auto preset:", errParams);
         this.applyPreset("auto", false);
       }
-      requestAnimationFrame(this.renderLoop.bind(this));
+      this.initBackgroundKeepAlive();
+      this.renderLoop();
       setTimeout(() => {
         this.toggleServer().catch(() => {
         });
@@ -2041,7 +2665,7 @@
             const actualH = this.videoEl.videoHeight || 720;
             this.canvasEl.width = actualW;
             this.canvasEl.height = actualH;
-            const resLabel = actualW >= 1920 ? "1080p Full HD" : actualW >= 1280 ? "720p HD" : `${actualW}p`;
+            const resLabel = actualW >= 3840 ? "4K UHD" : actualW >= 2560 ? "2K QHD" : actualW >= 1920 ? "1080p Full HD" : actualW >= 1280 ? "720p HD" : `${actualW}p`;
             if (this.resStatusText) this.resStatusText.textContent = `${actualW} \xD7 ${actualH} (${resLabel})`;
             this.showToast(`C\xE1mara activa a ${actualFps} FPS (${actualW} \xD7 ${actualH})`);
             this.populateResolutions(actualFps);
@@ -2169,13 +2793,73 @@
         selectFps.innerHTML += `<option value="${info.maxFps}" selected>${info.maxFps} FPS</option>`;
       }
     }
+    initBackgroundKeepAlive() {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          this.audioKeepAliveCtx = new AudioCtx();
+          const osc = this.audioKeepAliveCtx.createOscillator();
+          const gain = this.audioKeepAliveCtx.createGain();
+          gain.gain.value = 1e-5;
+          osc.connect(gain);
+          gain.connect(this.audioKeepAliveCtx.destination);
+          osc.start();
+        }
+      } catch (e) {
+        console.warn("[AppController] Audio keep-alive note:", e);
+      }
+      try {
+        const metronomeScript = `
+        let timer = null;
+        self.onmessage = function(e) {
+          if (e.data === 'start') {
+            if (!timer) {
+              timer = setInterval(function() {
+                self.postMessage('tick');
+              }, 16);
+            }
+          } else if (e.data === 'stop') {
+            if (timer) {
+              clearInterval(timer);
+              timer = null;
+            }
+          }
+        };
+      `;
+        const blob = new Blob([metronomeScript], { type: "application/javascript" });
+        this.metronomeWorker = new Worker(URL.createObjectURL(blob));
+        this.metronomeWorker.onmessage = () => {
+          if (document.hidden) {
+            this.renderLoop();
+          }
+        };
+        document.addEventListener("visibilitychange", () => {
+          if (document.hidden) {
+            if (this.metronomeWorker) this.metronomeWorker.postMessage("start");
+          } else {
+            if (this.metronomeWorker) this.metronomeWorker.postMessage("stop");
+            requestAnimationFrame(this.renderLoop.bind(this));
+          }
+        });
+      } catch (e) {
+        console.warn("[AppController] Background worker metronome note:", e);
+      }
+    }
+    lastRenderTimestamp = 0;
+    scheduleNextFrame() {
+      if (!document.hidden) {
+        requestAnimationFrame(this.renderLoop.bind(this));
+      }
+    }
     // ----------------------------------------------------
-    // MAIN 60 FPS GPU RENDER LOOP (Zero Stalls)
+    // MAIN 60 FPS GPU RENDER LOOP (Continuous, Never Stalls)
     // ----------------------------------------------------
     renderLoop() {
-      requestAnimationFrame(this.renderLoop.bind(this));
-      if (!this.videoEl || this.videoEl.readyState < 2) return;
+      this.scheduleNextFrame();
       const now = performance.now();
+      if (now - this.lastRenderTimestamp < 7) return;
+      this.lastRenderTimestamp = now;
+      if (!this.videoEl || this.videoEl.readyState < 2) return;
       const trackResult = this.faceTracker.update(this.videoEl, now);
       if (trackResult && trackResult.hasFace) {
         if (this.badgeFaceDot) this.badgeFaceDot.className = "dot-indicator green";
@@ -2189,7 +2873,13 @@
       if (this.frameCount % 20 === 0) {
         this.updateAICalibUI(aiCalib);
       }
-      this.renderEngine.render(this.videoEl, trackResult ? trackResult.maskCanvas : null, aiCalib);
+      this.renderEngine.render(
+        this.videoEl,
+        trackResult ? trackResult.maskCanvas : null,
+        aiCalib,
+        trackResult ? trackResult.makeupCanvas : null,
+        trackResult ? trackResult.eyeMakeupCanvas : null
+      );
       this.frameCount++;
       if (now - this.lastFpsTime >= 1e3) {
         if (this.fpsCounter) {
@@ -2246,6 +2936,36 @@
           console.warn(`[AppController] Error syncing slider '${param}':`, err);
         }
       });
+      if (params.lipstickColorHex) {
+        const picker = document.getElementById("picker-lipstick");
+        if (picker) picker.value = params.lipstickColorHex;
+        this.updateSwatchActiveState("swatches-lipstick", params.lipstickColorHex);
+      }
+      if (params.blushColorHex) {
+        const picker = document.getElementById("picker-blush");
+        if (picker) picker.value = params.blushColorHex;
+        this.updateSwatchActiveState("swatches-blush", params.blushColorHex);
+      }
+      if (params.eyebrowColorHex) {
+        const picker = document.getElementById("picker-eyebrow");
+        if (picker) picker.value = params.eyebrowColorHex;
+        this.updateSwatchActiveState("swatches-eyebrow", params.eyebrowColorHex);
+      }
+      if (params.eyeshadowColorHex) {
+        const picker = document.getElementById("picker-eyeshadow");
+        if (picker) picker.value = params.eyeshadowColorHex;
+        this.updateSwatchActiveState("swatches-eyeshadow", params.eyeshadowColorHex);
+      }
+      if (params.eyelinerColorHex) {
+        const picker = document.getElementById("picker-eyeliner");
+        if (picker) picker.value = params.eyelinerColorHex;
+        this.updateSwatchActiveState("swatches-eyeliner", params.eyelinerColorHex);
+      }
+      if (params.mascaraColorHex) {
+        const picker = document.getElementById("picker-mascara");
+        if (picker) picker.value = params.mascaraColorHex;
+        this.updateSwatchActiveState("swatches-mascara", params.mascaraColorHex);
+      }
     }
     scheduleSavePreferences(activePreset) {
       if (this.saveDebounceTimer !== null) {
@@ -2295,6 +3015,13 @@
         teethBright: { input: document.getElementById("sl-teeth-bright"), val: document.getElementById("val-teeth-bright"), param: "teethBrightness", scale: 0.01, unit: "%" },
         eyes: { input: document.getElementById("sl-eyes"), val: document.getElementById("val-eyes"), param: "eyeBrightening", scale: 0.01, unit: "%" },
         eyeBags: { input: document.getElementById("sl-eye-bags"), val: document.getElementById("val-eye-bags"), param: "concealer", scale: 0.01, unit: "%" },
+        // AR Makeup Sliders
+        lipstick: { input: document.getElementById("sl-lipstick"), val: document.getElementById("val-lipstick"), param: "lipstickIntensity", scale: 0.01, unit: "%" },
+        blush: { input: document.getElementById("sl-blush"), val: document.getElementById("val-blush"), param: "blushIntensity", scale: 0.01, unit: "%" },
+        eyebrow: { input: document.getElementById("sl-eyebrow"), val: document.getElementById("val-eyebrow"), param: "eyebrowIntensity", scale: 0.01, unit: "%" },
+        eyeshadow: { input: document.getElementById("sl-eyeshadow"), val: document.getElementById("val-eyeshadow"), param: "eyeshadowIntensity", scale: 0.01, unit: "%" },
+        eyeliner: { input: document.getElementById("sl-eyeliner"), val: document.getElementById("val-eyeliner"), param: "eyelinerIntensity", scale: 0.01, unit: "%" },
+        mascara: { input: document.getElementById("sl-mascara"), val: document.getElementById("val-mascara"), param: "mascaraIntensity", scale: 0.01, unit: "%" },
         brightness: { input: document.getElementById("sl-brightness"), val: document.getElementById("val-brightness"), param: "brightness", scale: 0.01, unit: "%", signed: true },
         contrast: { input: document.getElementById("sl-contrast"), val: document.getElementById("val-contrast"), param: "contrast", scale: 0.01, unit: "" },
         saturation: { input: document.getElementById("sl-saturation"), val: document.getElementById("val-saturation"), param: "saturation", scale: 0.01, unit: "" },
@@ -2317,6 +3044,64 @@
           document.querySelectorAll(".preset-pill").forEach((b) => b.classList.remove("active"));
           this.scheduleSavePreferences("custom");
         });
+      });
+    }
+    hexToRgb01(hex) {
+      let clean = hex.replace("#", "");
+      if (clean.length === 3) {
+        clean = clean.split("").map((c) => c + c).join("");
+      }
+      const num = parseInt(clean, 16);
+      const r = (num >> 16 & 255) / 255;
+      const g = (num >> 8 & 255) / 255;
+      const b = (num & 255) / 255;
+      return [Number(r.toFixed(3)), Number(g.toFixed(3)), Number(b.toFixed(3))];
+    }
+    updateSwatchActiveState(containerId, hexColor) {
+      const container = document.getElementById(containerId);
+      if (!container) return;
+      const target = hexColor.toLowerCase();
+      container.querySelectorAll(".swatch-btn").forEach((btn) => {
+        const c = (btn.getAttribute("data-color") || "").toLowerCase();
+        btn.classList.toggle("active", c === target);
+      });
+    }
+    bindMakeupColorPickers() {
+      const makeupConfigs = [
+        { pickerId: "picker-lipstick", swatchesId: "swatches-lipstick", colorParam: "lipstickColor", hexParam: "lipstickColorHex" },
+        { pickerId: "picker-blush", swatchesId: "swatches-blush", colorParam: "blushColor", hexParam: "blushColorHex" },
+        { pickerId: "picker-eyebrow", swatchesId: "swatches-eyebrow", colorParam: "eyebrowColor", hexParam: "eyebrowColorHex" },
+        { pickerId: "picker-eyeshadow", swatchesId: "swatches-eyeshadow", colorParam: "eyeshadowColor", hexParam: "eyeshadowColorHex" },
+        { pickerId: "picker-eyeliner", swatchesId: "swatches-eyeliner", colorParam: "eyelinerColor", hexParam: "eyelinerColorHex" },
+        { pickerId: "picker-mascara", swatchesId: "swatches-mascara", colorParam: "mascaraColor", hexParam: "mascaraColorHex" }
+      ];
+      makeupConfigs.forEach((cfg) => {
+        const picker = document.getElementById(cfg.pickerId);
+        const swatchesContainer = document.getElementById(cfg.swatchesId);
+        if (picker) {
+          picker.addEventListener("input", () => {
+            const hex = picker.value;
+            const rgb = this.hexToRgb01(hex);
+            this.renderEngine.updateParam(cfg.colorParam, rgb);
+            this.renderEngine.updateParam(cfg.hexParam, hex);
+            this.updateSwatchActiveState(cfg.swatchesId, hex);
+            this.scheduleSavePreferences("custom");
+          });
+        }
+        if (swatchesContainer) {
+          swatchesContainer.querySelectorAll(".swatch-btn").forEach((btn) => {
+            btn.addEventListener("click", () => {
+              const hex = btn.getAttribute("data-color");
+              if (!hex) return;
+              if (picker) picker.value = hex;
+              const rgb = this.hexToRgb01(hex);
+              this.renderEngine.updateParam(cfg.colorParam, rgb);
+              this.renderEngine.updateParam(cfg.hexParam, hex);
+              this.updateSwatchActiveState(cfg.swatchesId, hex);
+              this.scheduleSavePreferences("custom");
+            });
+          });
+        }
       });
     }
     bindToolbarButtons() {

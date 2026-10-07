@@ -7,6 +7,8 @@ export class BeautyEngineService implements IRenderEngine {
   private program: WebGLProgram | null = null;
   private cameraTexture: WebGLTexture | null = null;
   private maskTexture: WebGLTexture | null = null;
+  private makeupTexture: WebGLTexture | null = null;
+  private eyeMakeupTexture: WebGLTexture | null = null;
   private uLoc: Record<string, WebGLUniformLocation | null> = {};
 
   private params: BeautyParams = {
@@ -30,6 +32,32 @@ export class BeautyEngineService implements IRenderEngine {
 
     eyeBrightening: 0.25,
     concealer: 0.50,
+
+    // AR Makeup
+    lipstickIntensity: 0.00,
+    lipstickColor: [0.84, 0.13, 0.42],
+    lipstickColorHex: '#d6226c',
+
+    blushIntensity: 0.00,
+    blushColor: [0.96, 0.45, 0.53],
+    blushColorHex: '#f47287',
+
+    eyebrowIntensity: 0.00,
+    eyebrowColor: [0.23, 0.16, 0.11],
+    eyebrowColorHex: '#3b281c',
+
+    // AR Eye Makeup
+    eyeshadowIntensity: 0.00,
+    eyeshadowColor: [0.72, 0.43, 0.47],
+    eyeshadowColorHex: '#b76e79',
+
+    eyelinerIntensity: 0.00,
+    eyelinerColor: [0.04, 0.04, 0.04],
+    eyelinerColorHex: '#0a0a0a',
+
+    mascaraIntensity: 0.00,
+    mascaraColor: [0.04, 0.04, 0.04],
+    mascaraColorHex: '#0a0a0a',
 
     brightness: 0.00,
     contrast: 1.02,
@@ -82,6 +110,8 @@ export class BeautyEngineService implements IRenderEngine {
       precision highp float;
       uniform sampler2D u_cameraTexture;
       uniform sampler2D u_maskTexture;
+      uniform sampler2D u_makeupTexture;
+      uniform sampler2D u_eyeMakeupTexture;
       uniform vec2 u_resolution;
 
       // ====================================================
@@ -118,6 +148,30 @@ export class BeautyEngineService implements IRenderEngine {
       uniform float u_teethBrightness;
       uniform float u_eyeBrightening;
       uniform float u_concealer;
+
+      // ====================================================
+      // UNIFORMS: PASO 3B - MAQUILLAJE AR (LABIOS, RUBOR, CEJAS)
+      // ====================================================
+      uniform float u_lipstickIntensity;
+      uniform vec3 u_lipstickColor;
+
+      uniform float u_blushIntensity;
+      uniform vec3 u_blushColor;
+
+      uniform float u_eyebrowIntensity;
+      uniform vec3 u_eyebrowColor;
+
+      // ====================================================
+      // UNIFORMS: PASO 3C - MAQUILLAJE DE OJOS (SOMBRAS, DELINEADOR, PESTAÑINA)
+      // ====================================================
+      uniform float u_eyeshadowIntensity;
+      uniform vec3 u_eyeshadowColor;
+
+      uniform float u_eyelinerIntensity;
+      uniform vec3 u_eyelinerColor;
+
+      uniform float u_mascaraIntensity;
+      uniform vec3 u_mascaraColor;
 
       uniform float u_brightness;
       uniform float u_contrast;
@@ -348,6 +402,8 @@ export class BeautyEngineService implements IRenderEngine {
         // CON EL RESULTADO DE LOS AJUSTES ANTERIORES (step2Denoised)
         // ====================================================
         vec4 mask = texture2D(u_maskTexture, texUv);
+        vec4 makeup = texture2D(u_makeupTexture, texUv);
+        vec4 eyeMakeup = texture2D(u_eyeMakeupTexture, texUv);
         vec3 color = step2Denoised;
 
         // 3.1. Deteccion de piel robusta sobre la imagen limpia y calibrada
@@ -490,7 +546,74 @@ export class BeautyEngineService implements IRenderEngine {
           }
         }
 
-        // 3.8. Enfoque de texturas HD (Sobre la imagen denoised)
+        // ====================================================
+        // 3.8. MAQUILLAJE AR: LABIAL (LIPSTICK)
+        // ====================================================
+        if (u_lipstickIntensity > 0.01 && makeup.r > 0.02) {
+          float lipWeight = makeup.r;
+          // Proteger dientes y cavidad bucal
+          lipWeight *= clamp(1.0 - mouthArea * 2.2, 0.0, 1.0);
+
+          float lipLum = dot(color, vec3(0.299, 0.587, 0.114));
+          // Modulacion Soft Light para retener brillo especular del labio
+          vec3 lipTint = color * (u_lipstickColor * 1.45);
+          lipTint = mix(lipTint, u_lipstickColor * (lipLum * 0.70 + 0.30), 0.35);
+
+          float blendFactor = clamp(lipWeight * u_lipstickIntensity * 0.95, 0.0, 0.92);
+          color = mix(color, lipTint, blendFactor);
+        }
+
+        // ====================================================
+        // 3.9. MAQUILLAJE AR: RUBOR (BLUSH)
+        // ====================================================
+        if (u_blushIntensity > 0.01 && makeup.g > 0.02) {
+          float blushWeight = makeup.g;
+          vec3 blushTint = mix(color, u_blushColor, 0.40);
+          float blendFactor = clamp(blushWeight * u_blushIntensity * 0.80, 0.0, 0.85);
+          color = mix(color, blushTint, blendFactor);
+        }
+
+        // ====================================================
+        // 3.10. MAQUILLAJE AR: CEJAS (EYEBROWS)
+        // ====================================================
+        if (u_eyebrowIntensity > 0.01 && makeup.b > 0.02) {
+          float browWeight = makeup.b;
+          vec3 browTint = color * (u_eyebrowColor * 1.25);
+          float blendFactor = clamp(browWeight * u_eyebrowIntensity * 0.85, 0.0, 0.90);
+          color = mix(color, browTint, blendFactor);
+        }
+
+        // ====================================================
+        // 3.11. MAQUILLAJE DE OJOS: SOMBRAS (EYESHADOW)
+        // ====================================================
+        if (u_eyeshadowIntensity > 0.01 && eyeMakeup.r > 0.02) {
+          float shadowWeight = eyeMakeup.r * clamp(1.0 - mask.b * 2.8, 0.0, 1.0);
+          vec3 shadowTint = mix(color, u_eyeshadowColor, 0.45);
+          float blendFactor = clamp(shadowWeight * u_eyeshadowIntensity * 0.85, 0.0, 0.90);
+          color = mix(color, shadowTint, blendFactor);
+        }
+
+        // ====================================================
+        // 3.12. MAQUILLAJE DE OJOS: DELINEADOR (EYELINER)
+        // ====================================================
+        if (u_eyelinerIntensity > 0.01 && eyeMakeup.g > 0.02) {
+          float linerWeight = eyeMakeup.g;
+          vec3 linerTint = mix(color * 0.20, u_eyelinerColor, 0.70);
+          float blendFactor = clamp(linerWeight * u_eyelinerIntensity * 0.95, 0.0, 0.98);
+          color = mix(color, linerTint, blendFactor);
+        }
+
+        // ====================================================
+        // 3.13. MAQUILLAJE DE OJOS: PESTAÑINA / RÍMEL (MASCARA)
+        // ====================================================
+        if (u_mascaraIntensity > 0.01 && eyeMakeup.b > 0.02) {
+          float mascaraWeight = eyeMakeup.b;
+          vec3 mascaraTint = mix(color * 0.15, u_mascaraColor, 0.65);
+          float blendFactor = clamp(mascaraWeight * u_mascaraIntensity * 0.95, 0.0, 0.98);
+          color = mix(color, mascaraTint, blendFactor);
+        }
+
+        // 3.14. Enfoque de texturas HD (Sobre la imagen denoised)
         if (u_sharpen > 0.01) {
           vec2 texel = 1.0 / u_resolution;
           vec3 n = sampleCalibrated(texUv + vec2(0.0, -texel.y));
@@ -502,7 +625,7 @@ export class BeautyEngineService implements IRenderEngine {
           color = clamp(color + highPass * u_sharpen * 1.5, 0.0, 1.0);
         }
 
-        // 3.9. Gradacion de color final (Brillo, contraste, saturacion, temperatura, vineta)
+        // 3.15. Gradacion de color final (Brillo, contraste, saturacion, temperatura, vineta)
         color += vec3(u_brightness);
         color = (color - 0.5) * u_contrast + 0.5;
 
@@ -555,10 +678,14 @@ export class BeautyEngineService implements IRenderEngine {
 
     this.cameraTexture = this.createTexture();
     this.maskTexture = this.createTexture();
+    this.makeupTexture = this.createTexture();
+    this.eyeMakeupTexture = this.createTexture();
 
     this.uLoc = {
       u_cameraTexture: gl.getUniformLocation(this.program, 'u_cameraTexture'),
       u_maskTexture: gl.getUniformLocation(this.program, 'u_maskTexture'),
+      u_makeupTexture: gl.getUniformLocation(this.program, 'u_makeupTexture'),
+      u_eyeMakeupTexture: gl.getUniformLocation(this.program, 'u_eyeMakeupTexture'),
       u_resolution: gl.getUniformLocation(this.program, 'u_resolution'),
 
       u_denoiseAuto: gl.getUniformLocation(this.program, 'u_denoiseAuto'),
@@ -586,6 +713,20 @@ export class BeautyEngineService implements IRenderEngine {
       u_teethBrightness: gl.getUniformLocation(this.program, 'u_teethBrightness'),
       u_eyeBrightening: gl.getUniformLocation(this.program, 'u_eyeBrightening'),
       u_concealer: gl.getUniformLocation(this.program, 'u_concealer'),
+
+      u_lipstickIntensity: gl.getUniformLocation(this.program, 'u_lipstickIntensity'),
+      u_lipstickColor: gl.getUniformLocation(this.program, 'u_lipstickColor'),
+      u_blushIntensity: gl.getUniformLocation(this.program, 'u_blushIntensity'),
+      u_blushColor: gl.getUniformLocation(this.program, 'u_blushColor'),
+      u_eyebrowIntensity: gl.getUniformLocation(this.program, 'u_eyebrowIntensity'),
+      u_eyebrowColor: gl.getUniformLocation(this.program, 'u_eyebrowColor'),
+
+      u_eyeshadowIntensity: gl.getUniformLocation(this.program, 'u_eyeshadowIntensity'),
+      u_eyeshadowColor: gl.getUniformLocation(this.program, 'u_eyeshadowColor'),
+      u_eyelinerIntensity: gl.getUniformLocation(this.program, 'u_eyelinerIntensity'),
+      u_eyelinerColor: gl.getUniformLocation(this.program, 'u_eyelinerColor'),
+      u_mascaraIntensity: gl.getUniformLocation(this.program, 'u_mascaraIntensity'),
+      u_mascaraColor: gl.getUniformLocation(this.program, 'u_mascaraColor'),
 
       u_brightness: gl.getUniformLocation(this.program, 'u_brightness'),
       u_contrast: gl.getUniformLocation(this.program, 'u_contrast'),
@@ -642,7 +783,9 @@ export class BeautyEngineService implements IRenderEngine {
   public render(
     videoElement: HTMLVideoElement | HTMLCanvasElement,
     maskCanvas: HTMLCanvasElement | null,
-    aiCalibration?: AICalibrationData
+    aiCalibration?: AICalibrationData,
+    makeupCanvas?: HTMLCanvasElement | null,
+    eyeMakeupCanvas?: HTMLCanvasElement | null
   ): void {
     const gl = this.gl;
     if (!gl || !this.program || !videoElement) return;
@@ -674,6 +817,22 @@ export class BeautyEngineService implements IRenderEngine {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, maskCanvas);
     }
     gl.uniform1i(this.uLoc.u_maskTexture, 1);
+
+    // 2B. AR Makeup Mask (R=Lips, G=Blush, B=Eyebrows)
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, this.makeupTexture);
+    if (makeupCanvas && makeupCanvas.width > 0 && makeupCanvas.height > 0) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, makeupCanvas);
+    }
+    gl.uniform1i(this.uLoc.u_makeupTexture, 2);
+
+    // 2C. AR Eye Makeup Mask (R=Eyeshadow, G=Eyeliner, B=Mascara)
+    gl.activeTexture(gl.TEXTURE3);
+    gl.bindTexture(gl.TEXTURE_2D, this.eyeMakeupTexture);
+    if (eyeMakeupCanvas && eyeMakeupCanvas.width > 0 && eyeMakeupCanvas.height > 0) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, eyeMakeupCanvas);
+    }
+    gl.uniform1i(this.uLoc.u_eyeMakeupTexture, 3);
 
     // 3. Uniforms
     gl.uniform2f(this.uLoc.u_resolution, width, height);
@@ -717,6 +876,26 @@ export class BeautyEngineService implements IRenderEngine {
     gl.uniform1f(this.uLoc.u_eyeBrightening, this.params.eyeBrightening);
     gl.uniform1f(this.uLoc.u_concealer, this.params.concealer);
 
+    // AR Makeup Uniforms
+    gl.uniform1f(this.uLoc.u_lipstickIntensity, this.params.lipstickIntensity);
+    gl.uniform3f(this.uLoc.u_lipstickColor, this.params.lipstickColor[0], this.params.lipstickColor[1], this.params.lipstickColor[2]);
+
+    gl.uniform1f(this.uLoc.u_blushIntensity, this.params.blushIntensity);
+    gl.uniform3f(this.uLoc.u_blushColor, this.params.blushColor[0], this.params.blushColor[1], this.params.blushColor[2]);
+
+    gl.uniform1f(this.uLoc.u_eyebrowIntensity, this.params.eyebrowIntensity);
+    gl.uniform3f(this.uLoc.u_eyebrowColor, this.params.eyebrowColor[0], this.params.eyebrowColor[1], this.params.eyebrowColor[2]);
+
+    // AR Eye Makeup Uniforms
+    gl.uniform1f(this.uLoc.u_eyeshadowIntensity, this.params.eyeshadowIntensity);
+    gl.uniform3f(this.uLoc.u_eyeshadowColor, this.params.eyeshadowColor[0], this.params.eyeshadowColor[1], this.params.eyeshadowColor[2]);
+
+    gl.uniform1f(this.uLoc.u_eyelinerIntensity, this.params.eyelinerIntensity);
+    gl.uniform3f(this.uLoc.u_eyelinerColor, this.params.eyelinerColor[0], this.params.eyelinerColor[1], this.params.eyelinerColor[2]);
+
+    gl.uniform1f(this.uLoc.u_mascaraIntensity, this.params.mascaraIntensity);
+    gl.uniform3f(this.uLoc.u_mascaraColor, this.params.mascaraColor[0], this.params.mascaraColor[1], this.params.mascaraColor[2]);
+
     gl.uniform1f(this.uLoc.u_brightness, this.params.brightness);
     gl.uniform1f(this.uLoc.u_contrast, this.params.contrast);
     gl.uniform1f(this.uLoc.u_saturation, this.params.saturation);
@@ -733,8 +912,12 @@ export class BeautyEngineService implements IRenderEngine {
   }
 
   public dispose(): void {
-    if (this.gl && this.program) {
-      this.gl.deleteProgram(this.program);
+    if (this.gl) {
+      if (this.program) this.gl.deleteProgram(this.program);
+      if (this.cameraTexture) this.gl.deleteTexture(this.cameraTexture);
+      if (this.maskTexture) this.gl.deleteTexture(this.maskTexture);
+      if (this.makeupTexture) this.gl.deleteTexture(this.makeupTexture);
+      if (this.eyeMakeupTexture) this.gl.deleteTexture(this.eyeMakeupTexture);
     }
   }
 }

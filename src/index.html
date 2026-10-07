@@ -368,6 +368,155 @@
                 <input type="range" id="sl-eyes" min="0" max="100" value="25">
               </div>
             </div>
+
+            <!-- Control Card: Maquillaje AR (Labial, Rubor & Cejas) -->
+            <div class="control-card accent-rose">
+              <div class="card-title">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"></path>
+                </svg>
+                <span>Maquillaje AR & Perfilado</span>
+              </div>
+
+              <!-- 1. Labial (Lipstick) -->
+              <div class="makeup-item">
+                <div class="slider-group">
+                  <div class="slider-header">
+                    <div class="makeup-label-row">
+                      <label for="sl-lipstick">💄 Labial (Lipstick)</label>
+                      <input type="color" id="picker-lipstick" class="color-picker-input" value="#d6226c" title="Seleccionar color de labial">
+                    </div>
+                    <span class="slider-val" id="val-lipstick">0%</span>
+                  </div>
+                  <input type="range" id="sl-lipstick" min="0" max="100" value="0">
+                </div>
+                <div class="color-swatches" id="swatches-lipstick">
+                  <button type="button" class="swatch-btn" data-color="#c41d44" style="background:#c41d44;" title="Rojo Carmín"></button>
+                  <button type="button" class="swatch-btn active" data-color="#d6226c" style="background:#d6226c;" title="Fucsia Pop"></button>
+                  <button type="button" class="swatch-btn" data-color="#e05697" style="background:#e05697;" title="Rosa Chicle"></button>
+                  <button type="button" class="swatch-btn" data-color="#d97d64" style="background:#d97d64;" title="Nude Durazno"></button>
+                  <button type="button" class="swatch-btn" data-color="#721b3a" style="background:#721b3a;" title="Vino Tinto"></button>
+                  <button type="button" class="swatch-btn" data-color="#b83b5e" style="background:#b83b5e;" title="Frambuesa"></button>
+                </div>
+              </div>
+
+              <!-- 2. Rubor (Blush) -->
+              <div class="makeup-item">
+                <div class="slider-group">
+                  <div class="slider-header">
+                    <div class="makeup-label-row">
+                      <label for="sl-blush">🌸 Rubor (Blush)</label>
+                      <input type="color" id="picker-blush" class="color-picker-input" value="#f47287" title="Seleccionar color de rubor">
+                    </div>
+                    <span class="slider-val" id="val-blush">0%</span>
+                  </div>
+                  <input type="range" id="sl-blush" min="0" max="100" value="0">
+                </div>
+                <div class="color-swatches" id="swatches-blush">
+                  <button type="button" class="swatch-btn active" data-color="#f47287" style="background:#f47287;" title="Rosa Pastel"></button>
+                  <button type="button" class="swatch-btn" data-color="#f89775" style="background:#f89775;" title="Melocotón"></button>
+                  <button type="button" class="swatch-btn" data-color="#ff6e6e" style="background:#ff6e6e;" title="Coral"></button>
+                  <button type="button" class="swatch-btn" data-color="#d9546b" style="background:#d9546b;" title="Rubor Rosado"></button>
+                  <button type="button" class="swatch-btn" data-color="#c87a55" style="background:#c87a55;" title="Bronceado"></button>
+                </div>
+              </div>
+
+              <!-- 3. Cejas (Eyebrows) -->
+              <div class="makeup-item">
+                <div class="slider-group">
+                  <div class="slider-header">
+                    <div class="makeup-label-row">
+                      <label for="sl-eyebrow">✨ Perfilado de Cejas</label>
+                      <input type="color" id="picker-eyebrow" class="color-picker-input" value="#3b281c" title="Seleccionar color de cejas">
+                    </div>
+                    <span class="slider-val" id="val-eyebrow">0%</span>
+                  </div>
+                  <input type="range" id="sl-eyebrow" min="0" max="100" value="0">
+                </div>
+                <div class="color-swatches" id="swatches-eyebrow">
+                  <button type="button" class="swatch-btn" data-color="#141414" style="background:#141414;" title="Negro Azabache"></button>
+                  <button type="button" class="swatch-btn active" data-color="#3b281c" style="background:#3b281c;" title="Castaño Oscuro"></button>
+                  <button type="button" class="swatch-btn" data-color="#5c4033" style="background:#5c4033;" title="Castaño Medio"></button>
+                  <button type="button" class="swatch-btn" data-color="#8b7355" style="background:#8b7355;" title="Rubio Ceniza"></button>
+                  <button type="button" class="swatch-btn" data-color="#6d4c41" style="background:#6d4c41;" title="Chocolate"></button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Control Card: Maquillaje de Ojos AR (Sombras, Delineador & Pestañina) -->
+            <div class="control-card accent-rose">
+              <div class="card-title">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"></circle>
+                  <path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8z"></path>
+                  <line x1="12" y1="2" x2="12" y2="4"></line>
+                  <line x1="12" y1="20" x2="12" y2="22"></line>
+                </svg>
+                <span>Maquillaje de Ojos AR (Eyes Studio)</span>
+              </div>
+
+              <!-- 4. Sombras de Ojos (Eyeshadow) -->
+              <div class="makeup-item">
+                <div class="slider-group">
+                  <div class="slider-header">
+                    <div class="makeup-label-row">
+                      <label for="sl-eyeshadow">🎨 Sombras de Ojos (Eyeshadow)</label>
+                      <input type="color" id="picker-eyeshadow" class="color-picker-input" value="#b76e79" title="Seleccionar color de sombras">
+                    </div>
+                    <span class="slider-val" id="val-eyeshadow">0%</span>
+                  </div>
+                  <input type="range" id="sl-eyeshadow" min="0" max="100" value="0">
+                </div>
+                <div class="color-swatches" id="swatches-eyeshadow">
+                  <button type="button" class="swatch-btn active" data-color="#b76e79" style="background:#b76e79;" title="Rose Gold"></button>
+                  <button type="button" class="swatch-btn" data-color="#c59b6c" style="background:#c59b6c;" title="Champaña"></button>
+                  <button type="button" class="swatch-btn" data-color="#b85d38" style="background:#b85d38;" title="Cobre Cálido"></button>
+                  <button type="button" class="swatch-btn" data-color="#6b3074" style="background:#6b3074;" title="Ciruela / Berry"></button>
+                  <button type="button" class="swatch-btn" data-color="#222226" style="background:#222226;" title="Smokey Dark"></button>
+                  <button type="button" class="swatch-btn" data-color="#d4af37" style="background:#d4af37;" title="Dorado Glam"></button>
+                </div>
+              </div>
+
+              <!-- 5. Delineador (Eyeliner) -->
+              <div class="makeup-item">
+                <div class="slider-group">
+                  <div class="slider-header">
+                    <div class="makeup-label-row">
+                      <label for="sl-eyeliner">✒️ Delineador Cat-Eye (Eyeliner)</label>
+                      <input type="color" id="picker-eyeliner" class="color-picker-input" value="#0a0a0a" title="Seleccionar color de delineador">
+                    </div>
+                    <span class="slider-val" id="val-eyeliner">0%</span>
+                  </div>
+                  <input type="range" id="sl-eyeliner" min="0" max="100" value="0">
+                </div>
+                <div class="color-swatches" id="swatches-eyeliner">
+                  <button type="button" class="swatch-btn active" data-color="#0a0a0a" style="background:#0a0a0a;" title="Negro Intenso"></button>
+                  <button type="button" class="swatch-btn" data-color="#2c1b18" style="background:#2c1b18;" title="Marrón Espresso"></button>
+                  <button type="button" class="swatch-btn" data-color="#0d1b2a" style="background:#0d1b2a;" title="Azul Marino"></button>
+                  <button type="button" class="swatch-btn" data-color="#4a0e17" style="background:#4a0e17;" title="Borgoña"></button>
+                  <button type="button" class="swatch-btn" data-color="#0d3b2e" style="background:#0d3b2e;" title="Esmeralda"></button>
+                </div>
+              </div>
+
+              <!-- 6. Pestañina / Rímel (Mascara) -->
+              <div class="makeup-item">
+                <div class="slider-group">
+                  <div class="slider-header">
+                    <div class="makeup-label-row">
+                      <label for="sl-mascara">🖤 Pestañina & Volumen (Mascara)</label>
+                      <input type="color" id="picker-mascara" class="color-picker-input" value="#0a0a0a" title="Seleccionar color de pestañina">
+                    </div>
+                    <span class="slider-val" id="val-mascara">0%</span>
+                  </div>
+                  <input type="range" id="sl-mascara" min="0" max="100" value="0">
+                </div>
+                <div class="color-swatches" id="swatches-mascara">
+                  <button type="button" class="swatch-btn active" data-color="#0a0a0a" style="background:#0a0a0a;" title="Negro Carbón"></button>
+                  <button type="button" class="swatch-btn" data-color="#1f1816" style="background:#1f1816;" title="Café Intenso"></button>
+                  <button type="button" class="swatch-btn" data-color="#2b1d0c" style="background:#2b1d0c;" title="Marrón Natural"></button>
+                </div>
+              </div>
+            </div>
           </div>
 
           <!-- TAB 2: ESTUDIO & CALIBRACIÓN IA DE CÁMARA -->
